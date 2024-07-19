@@ -43,10 +43,10 @@ class AMPDiscriminator(nn.Module):
 
         disc = self.amp_linear(self.trunk(expert_data))
         ones = torch.ones(disc.size(), device=disc.device)
-        grad = autograd.grad(
+        grad = autograd.grad( # Computes the gradients of outputs w.r.t. inputs.
             outputs=disc, inputs=expert_data,
             grad_outputs=ones, create_graph=True,
-            retain_graph=True, only_inputs=True)[0]
+            retain_graph=True, only_inputs=True)[0] # the index [0] indicates gradient w.r.t. the first input. For multiple inputs, use inputs=[input1, input2]
 
         # Enforce that the grad norm approaches 0.
         grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean()

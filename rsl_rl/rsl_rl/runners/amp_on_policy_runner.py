@@ -43,6 +43,13 @@ from rsl_rl.env import VecEnv
 from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator
 from rsl_rl.datasets.motion_loader import AMPLoader
 from rsl_rl.utils.utils import Normalizer
+from legged_gym.utils.helpers import class_to_dict
+
+import wandb
+from datetime import datetime
+
+LEGGED_GYM_ROOT = '/home/cha/isaac_ws/AMP_for_hardware/legged_gym'
+LEGGED_GYM_ENVS = '/home/cha/isaac_ws/AMP_for_hardware/legged_gym/envs'
 
 class AMPOnPolicyRunner:
 
@@ -51,6 +58,17 @@ class AMPOnPolicyRunner:
                  train_cfg,
                  log_dir=None,
                  device='cpu'):
+
+        # WANDB INIT
+        wandb.init(project="AMP_tocabi")
+        experiment_name = train_cfg['runner']['experiment_name']
+        wandb.run.name = experiment_name + '_' + datetime.now().strftime("%Y%m%d_%H%M%S")
+        wandb.run.save()
+
+        args = class_to_dict(train_cfg)
+        wandb.config.update(args)
+        wandb.save(os.path.join(LEGGED_GYM_ENVS, experiment_name, experiment_name+'_config.py'),policy="now")
+        wandb.save(os.path.join(LEGGED_GYM_ENVS, experiment_name, experiment_name+'.py'), policy="now")
 
         self.cfg=train_cfg["runner"]
         self.alg_cfg = train_cfg["algorithm"]
@@ -73,10 +91,10 @@ class AMPOnPolicyRunner:
 
         amp_data = AMPLoader(
             device, time_between_frames=self.env.dt, preload_transitions=True,
-            num_preload_transitions=train_cfg['runner']['amp_num_preload_transitions'],
+            num_preload_transitions=train_cfg['runner']['amp_num_preload_transitions'], 
             motion_files=self.cfg["amp_motion_files"])
-        amp_normalizer = Normalizer(amp_data.observation_dim)
-        discriminator = AMPDiscriminator(
+        amp_normalizer = Normalizer(amp_data.observation_dim) # batchnorm. Updates its running averages (mean, std) of observations from batches of observations, and normalizes observations using them
+        discriminator = AMPDiscriminator( # Discriminator computes the reward and gradient penalty loss.
             amp_data.observation_dim * 2,
             train_cfg['runner']['amp_reward_coef'],
             train_cfg['runner']['amp_discr_hidden_dims'], device,
@@ -172,9 +190,17 @@ class AMPOnPolicyRunner:
             if it % self.save_interval == 0:
                 self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)))
             ep_infos.clear()
+            wandb_dict = {
+                "dt" : self.env.dt,
+                "Train/mean_policy_pred": mean_policy_pred,
+                "Train/mean_expert_pred": mean_expert_pred
+            }
+            if it%10 == 0:
+                self.log_wandb(wandb_dict, locals())
         
         self.current_learning_iteration += num_learning_iterations
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
+        self.save_wandb(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
 
     def log(self, locs, width=80, pad=35):
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
@@ -276,3 +302,37 @@ class AMPOnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_inference
+
+    def log_wandb(self, d, locs):
+
+        wandb_dict = dict()
+        wandb_dict = {**wandb_dict, **d}
+        wandb_dict['n_updates'] = locs['it']
+        wandb_dict['Loss/value_function'] = locs['mean_value_loss']
+        wandb_dict['Loss/surrogate'] = locs['mean_surrogate_loss']
+        wandb_dict['Loss/AMP'] = locs['mean_amp_loss']
+        wandb_dict['Loss/AMP_grad'] = locs['mean_grad_pen_loss']
+        wandb_dict['Loss/learning_rate'] = self.alg.learning_rate
+        if locs['ep_infos']:
+            for key in locs['ep_infos'][0]:
+                infotensor = torch.tensor([], device=self.device)
+                for ep_info in locs['ep_infos']:
+                    # handle scalar and zero dimensional tensor infos
+                    if not isinstance(ep_info[key], torch.Tensor):
+                        ep_info[key] = torch.Tensor([ep_info[key]])
+                    if len(ep_info[key].shape) == 0:
+                        ep_info[key] = ep_info[key].unsqueeze(0)
+                    infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
+                value = torch.mean(infotensor)
+                wandb_dict['Train/Mean_episode_' + key] = value.item()
+        if len(locs['rewbuffer']) > 0:
+            wandb_dict['Train/mean_reward'] = statistics.mean(locs['rewbuffer'])
+            wandb_dict['Train/mean_episode_length_t'] = statistics.mean(locs['lenbuffer']) * wandb_dict['dt']
+            wandb_dict['Train/mean_episode_length'] = statistics.mean(locs['lenbuffer'])
+        wandb.log(wandb_dict)
+
+    def save_wandb(self, model_path):
+        artifact = wandb.Artifact('model', type='model')
+        artifact.add_file(model_path)
+        wandb.run.log_artifact(artifact)
+        wandb.run.finish()

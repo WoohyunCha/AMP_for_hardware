@@ -31,13 +31,13 @@ import glob
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-MOTION_FILES = glob.glob('datasets/mocap_motions/*')
+MOTION_FILES = glob.glob('datasets/mocap_motions/processed_data_tocabi_walk.json')
 
 
-class A1AMPCfg( LeggedRobotCfg ):
+class TOCABIAMPCfg( LeggedRobotCfg ):
 
     class env( LeggedRobotCfg.env ):
-        num_envs = 5480
+        num_envs = 4096
         include_history_steps = None  # Number of steps of history to include.
         num_observations = 42
         num_privileged_obs = 48
@@ -80,7 +80,8 @@ class A1AMPCfg( LeggedRobotCfg ):
         measure_heights = False
 
     class asset( LeggedRobotCfg.asset ):
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/a1/urdf/a1.urdf'
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/a1/urdf/a1.urdf' #TODO change to tocabi
+        name = "tocabi"
         foot_name = "foot"
         penalize_contacts_on = ["thigh", "calf"]
         terminate_after_contacts_on = [
@@ -132,6 +133,16 @@ class A1AMPCfg( LeggedRobotCfg ):
             stand_still = 0.0
             dof_pos_limits = 0.0
 
+    class normalization:
+        class obs_scales:
+            lin_vel = 2.0
+            ang_vel = 0.25
+            dof_pos = 1.0
+            dof_vel = 0.05
+            height_measurements = 5.0
+        clip_observations = 100.
+        clip_actions = 100.
+
     class commands:
         curriculum = False
         max_curriculum = 1.
@@ -144,7 +155,7 @@ class A1AMPCfg( LeggedRobotCfg ):
             ang_vel_yaw = [-1.57, 1.57]    # min max [rad/s]
             heading = [-3.14, 3.14]
 
-class A1AMPCfgPPO( LeggedRobotCfgPPO ):
+class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
@@ -154,7 +165,7 @@ class A1AMPCfgPPO( LeggedRobotCfgPPO ):
 
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
-        experiment_name = 'a1_amp' # should be the same as 'env' in env.py and env_config.py 
+        experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
         algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
         max_iterations = 500000 # number of policy updates

@@ -117,12 +117,12 @@ class Normalizer(RunningMeanStd):
         self.epsilon = epsilon
         self.clip_obs = clip_obs
 
-    def normalize(self, input):
+    def normalize(self, input): # mean, var are running averages, computed for batch norm
         return np.clip(
             (input - self.mean) / np.sqrt(self.var + self.epsilon),
             -self.clip_obs, self.clip_obs)
 
-    def normalize_torch(self, input, device):
+    def normalize_torch(self, input, device): # Batch norm for observations using running averages
         mean_torch = torch.tensor(
             self.mean, device=device, dtype=torch.float32)
         std_torch = torch.sqrt(torch.tensor(
@@ -130,7 +130,7 @@ class Normalizer(RunningMeanStd):
         return torch.clamp(
             (input - mean_torch) / std_torch, -self.clip_obs, self.clip_obs)
 
-    def update_normalizer(self, rollouts, expert_loader):
+    def update_normalizer(self, rollouts, expert_loader): # With data from policy and reference, update running averages for batch norm
         policy_data_generator = rollouts.feed_forward_generator_amp(
             None, mini_batch_size=expert_loader.batch_size)
         expert_data_generator = expert_loader.dataset.feed_forward_generator_amp(

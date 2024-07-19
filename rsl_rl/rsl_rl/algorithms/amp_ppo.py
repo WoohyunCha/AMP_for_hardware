@@ -232,7 +232,7 @@ class AMPPPO:
                 policy_loss = torch.nn.MSELoss()(
                     policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
                 amp_loss = 0.5 * (expert_loss + policy_loss)
-                grad_pen_loss = self.discriminator.compute_grad_pen(
+                grad_pen_loss = self.discriminator.compute_grad_pen( # already scaled with lambda
                     *sample_amp_expert, lambda_=10)
 
                 # Compute total loss.
