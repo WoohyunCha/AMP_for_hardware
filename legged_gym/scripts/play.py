@@ -51,7 +51,12 @@ def play(args):
     env_cfg.domain_rand.push_robots = False
     env_cfg.domain_rand.randomize_gains = False
     env_cfg.domain_rand.randomize_base_mass = False
-
+    if args.speed is not None:
+        env_cfg.commands.num_commands = 4
+        env_cfg.commands.heading_command = True        
+        env_cfg.commands.ranges.lin_vel_x = [args.speed, args.speed]
+        env_cfg.commands.ranges.lin_vel_y = [0., 0.]
+        env_cfg.commands.ranges.heading = [0.,0.]
     train_cfg.runner.amp_num_preload_transitions = 1
 
     # prepare environment
@@ -60,6 +65,7 @@ def play(args):
     obs = env.get_observations()
     # load policy
     train_cfg.runner.resume = True
+    train_cfg.runner.LOG_WANDB = False
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     policy = ppo_runner.get_inference_policy(device=env.device)
     
@@ -72,7 +78,8 @@ def play(args):
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
     joint_index = 1 # which joint is used for logging
-    stop_state_log = 100 # number of steps before plotting states
+    start_state_log = np.ceil(2. / env.dt) 
+    stop_state_log = np.ceil(4. / env.dt) # number of steps before plotting states
     stop_rew_log = env.max_episode_length + 1 # number of steps before print average episode rewards
     camera_position = np.array(env_cfg.viewer.pos, dtype=np.float64)
     camera_vel = np.array([1., 1., 0.])
@@ -91,7 +98,7 @@ def play(args):
             camera_position += camera_vel * env.dt
             env.set_camera(camera_position, camera_position + camera_direction)
 
-        if i < stop_state_log:
+        if i < stop_state_log and i > start_state_log:
             logger.log_states(
                 {
                     'dof_pos_target': actions[robot_index, joint_index].item() * env.cfg.control.action_scale,

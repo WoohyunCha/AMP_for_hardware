@@ -47,12 +47,12 @@ from legged_gym.envs.tocabi_amp.tocabi_amp_config import TOCABIAMPCfg
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
-from rsl_rl.datasets.q_motion_loader import qAMPLoader
+from rsl_rl.datasets.motion_loader import AMPLoader
 
 class TOCABIAMP(LeggedRobot):
 
     def _custom_init(self, cfg):
-        pass
+        self.termination_height = cfg.asset.termination_height
 
     def reset(self):
         """ Reset all robots"""
@@ -146,6 +146,9 @@ class TOCABIAMP(LeggedRobot):
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         self.reset_buf |= self.time_out_buf
+        self.height_buf = self.root_states[:, 2] < self.termination_height[0]
+        self.height_buf |= self.root_states[:,2] > self.termination_height[1]
+        self.reset_buf |= self.height_buf
 
     def reset_idx(self, env_ids):
         """ Reset some environments.
@@ -255,7 +258,7 @@ class TOCABIAMP(LeggedRobot):
         # base_ang_vel = self.base_ang_vel
         # joint_vel = self.dof_vel
         # z_pos = self.root_states[:, 2:3]
-        return self.dof_pos
+        return torch.concat((self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions]), dim=-1)
 
     def create_sim(self):
         """ Creates simulation, terrain and evironments
@@ -440,8 +443,8 @@ class TOCABIAMP(LeggedRobot):
             env_ids (List[int]): Environemnt ids
             frames: AMP frames to initialize motion with
         """
-        self.dof_pos[env_ids] = qAMPLoader.get_joint_pose_batch(frames)
-        self.dof_vel[env_ids] = qAMPLoader.get_joint_vel_batch(frames)
+        self.dof_pos[env_ids] = AMPLoader.get_joint_pose_batch(frames)
+        self.dof_vel[env_ids] = AMPLoader.get_joint_vel_batch(frames)        
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
@@ -477,14 +480,14 @@ class TOCABIAMP(LeggedRobot):
             env_ids (List[int]): Environemnt ids
         """
         # base position
-        self._reset_root_states(self, env_ids=env_ids) # TODO: Reset condition is too off-distribution?
-        # root_pos = qAMPLoader.get_root_pos_batch(frames)
+        self._reset_root_states(env_ids=env_ids) # TODO: Reset condition is too off-distribution?
+        # root_pos = AMPLoader.get_root_pos_batch(frames)
         # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
         # self.root_states[env_ids, :3] = root_pos
-        # root_orn = qAMPLoader.get_root_rot_batch(frames)
+        # root_orn = AMPLoader.get_root_rot_batch(frames)
         # self.root_states[env_ids, 3:7] = root_orn
-        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, qAMPLoader.get_linear_vel_batch(frames))
-        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, qAMPLoader.get_angular_vel_batch(frames))
+        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
+        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
 
         # env_ids_int32 = env_ids.to(dtype=torch.int32)
         # self.gym.set_actor_root_state_tensor_indexed(self.sim,
@@ -806,7 +809,6 @@ class TOCABIAMP(LeggedRobot):
             pos = self.env_origins[i].clone()
             pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
-                
             rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
@@ -817,7 +819,6 @@ class TOCABIAMP(LeggedRobot):
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
-
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
@@ -830,6 +831,7 @@ class TOCABIAMP(LeggedRobot):
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
 
+    
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
             Otherwise create a grid.

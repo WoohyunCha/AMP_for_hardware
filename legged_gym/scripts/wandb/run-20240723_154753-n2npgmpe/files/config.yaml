@@ -1,0 +1,104 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    python_version: 3.8.10
+    cli_version: 0.17.4
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1721717273
+    t:
+      1:
+      - 1
+      - 55
+      2:
+      - 1
+      - 55
+      3:
+      - 3
+      - 17
+      - 23
+      - 37
+      4: 3.8.10
+      5: 0.17.4
+      8:
+      - 5
+      10:
+      - 3
+      13: linux-x86_64
+algorithm:
+  desc: null
+  value:
+    amp_replay_buffer_size: 1000000
+    clip_param: 0.2
+    desired_kl: 0.01
+    entropy_coef: 0.01
+    gamma: 0.99
+    lam: 0.95
+    learning_rate: 0.001
+    max_grad_norm: 1.0
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    schedule: adaptive
+    use_clipped_value_loss: true
+    value_loss_coef: 1.0
+init_member_classes:
+  desc: null
+  value: {}
+policy:
+  desc: null
+  value:
+    activation: elu
+    actor_hidden_dims:
+    - 512
+    - 256
+    - 128
+    critic_hidden_dims:
+    - 512
+    - 256
+    - 128
+    init_noise_std: 1.0
+runner:
+  desc: null
+  value:
+    LOG_WANDB: true
+    algorithm_class_name: AMPPPO
+    amp_discr_hidden_dims:
+    - 1024
+    - 512
+    amp_motion_files:
+    - /home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/processed_data_tocabi_walk.json
+    amp_num_preload_transitions: 1
+    amp_reward_coef: 2.0
+    amp_task_reward_lerp: 0.3
+    checkpoint: -1
+    experiment_name: tocabi_amp
+    load_run: -1
+    max_iterations: 500000
+    min_normalized_std:
+    - 0.05
+    - 0.02
+    - 0.05
+    - 0.05
+    - 0.02
+    - 0.05
+    - 0.05
+    - 0.02
+    - 0.05
+    - 0.05
+    - 0.02
+    - 0.05
+    num_steps_per_env: 24
+    policy_class_name: ActorCritic
+    resume: true
+    resume_path: null
+    run_name: ''
+    save_interval: 50
+runner_class_name:
+  desc: null
+  value: AMPOnPolicyRunner
+seed:
+  desc: null
+  value: 1

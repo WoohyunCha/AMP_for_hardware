@@ -73,7 +73,7 @@ class AMPPPO:
         self.amp_transition = RolloutStorage.Transition()
         self.amp_storage = ReplayBuffer(
             discriminator.input_dim // 2, amp_replay_buffer_size, device)
-        self.amp_data = amp_data
+        self.amp_data = amp_data # AMPLoader
         self.amp_normalizer = amp_normalizer
 
         # PPO components

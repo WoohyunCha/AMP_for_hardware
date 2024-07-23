@@ -31,7 +31,7 @@ import glob
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-MOTION_FILES = glob.glob('datasets/mocap_motions/processed_data_tocabi_walk.json')
+MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/*.json')
 
 
 class TOCABIAMPCfg( LeggedRobotCfg ):
@@ -45,64 +45,75 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         reference_state_initialization_prob = 0.85
         amp_motion_files = MOTION_FILES
         episode_length_s = 20 # episode length in seconds
+        num_actions = 12
 
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.42] # x,y,z [m]
+        pos = [0.0, 0.0, 0.95] # x,y,z [m]
+        rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
+        lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
+        ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
         default_joint_angles = { # = target angles [rad] when action = 0.0
-            'FL_hip_joint': 0.0,   # [rad]
-            'RL_hip_joint': 0.0,   # [rad]
-            'FR_hip_joint': 0.0 ,  # [rad]
-            'RR_hip_joint': 0.0,   # [rad]
+            'L_HipYaw_Joint': 0.0,
+            'L_HipRoll_Joint': 0.0,
+            'L_HipPitch_Joint': -0.24,
+            'L_Knee_Joint': 0.6,
+            'L_AnklePitch_Joint': -0.36,
+            'L_AnkleRoll_Joint': 0.0,
 
-            'FL_thigh_joint': 0.9,     # [rad]
-            'RL_thigh_joint': 0.9,   # [rad]
-            'FR_thigh_joint': 0.9,     # [rad]
-            'RR_thigh_joint': 0.9,   # [rad]
-
-            'FL_calf_joint': -1.8,   # [rad]
-            'RL_calf_joint': -1.8,    # [rad]
-            'FR_calf_joint': -1.8,  # [rad]
-            'RR_calf_joint': -1.8,    # [rad]
+            'R_HipYaw_Joint': 0.0,
+            'R_HipRoll_Joint': 0.0,
+            'R_HipPitch_Joint': -0.24,
+            'R_Knee_Joint': 0.6,
+            'R_AnklePitch_Joint': -0.36,
+            'R_AnkleRoll_Joint': 0.0,
         }
 
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 80.}  # [N*m/rad]
-        damping = {'joint': 1.0}     # [N*m*s/rad]
+        stiffness = {'Joint': 2000.}  # [N*m/rad]
+        damping = {'Joint': 50.0}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.25
+        action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 6
+        decimation = 2 # TODO this was 6
 
     class terrain( LeggedRobotCfg.terrain ):
         mesh_type = 'plane'
         measure_heights = False
 
     class asset( LeggedRobotCfg.asset ):
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/a1/urdf/a1.urdf' #TODO change to tocabi
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/urdf/tocabi.urdf' 
         name = "tocabi"
-        foot_name = "foot"
-        penalize_contacts_on = ["thigh", "calf"]
-        terminate_after_contacts_on = [
-            "base", "FL_calf", "FR_calf", "RL_calf", "RR_calf",
-            "FL_thigh", "FR_thigh", "RL_thigh", "RR_thigh"]
+        foot_name = "AnkleRoll_Link"
+        penalize_contacts_on = []
+        # penalize_contacts_on = ['bolt_lower_leg_right_side', 'bolt_body', 'bolt_hip_fe_left_side', 'bolt_hip_fe_right_side', ' bolt_lower_leg_left_side', 'bolt_shoulder_fe_left_side', 'bolt_shoulder_fe_right_side', 'bolt_trunk', 'bolt_upper_leg_left_side', 'bolt_upper_leg_right_side']
+        terminate_after_contacts_on = ['base', 'Knee', 'Thigh']
+        termination_height = (0.6, 1.0)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
-  
+        disable_gravity = False
+        collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
+        fix_base_link = False # fixe the base of the robot
+        default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
+        self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
+        replace_cylinder_with_capsule = True # replace collision cylinders with capsules, leads to faster/more stable simulation
+        flip_visual_attachments = False # Some .obj meshes must be flipped from y-up to z-up
+        # fix_base_link = True
+          
     class domain_rand:
-        randomize_friction = True
+        randomize_friction = False
         friction_range = [0.25, 1.75]
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [-1., 1.]
-        push_robots = True
+        push_robots = False
         push_interval_s = 15
         max_push_vel_xy = 1.0
-        randomize_gains = True
+        randomize_gains = False
         stiffness_multiplier_range = [0.9, 1.1]
         damping_multiplier_range = [0.9, 1.1]
 
     class noise:
-        add_noise = True
+        add_noise = False
         noise_level = 1.0 # scales other values
         class noise_scales:
             dof_pos = 0.03
@@ -117,8 +128,8 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         base_height_target = 0.25
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
-            tracking_lin_vel = 1.5 * 1. / (.005 * 6)
-            tracking_ang_vel = 0.5 * 1. / (.005 * 6)
+            tracking_lin_vel = 1.5 * 1. / (.01 * 6) # 0.005
+            tracking_ang_vel = 0.5 * 1. / (.01 * 6)
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
@@ -145,12 +156,12 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
     class commands:
         curriculum = False
-        max_curriculum = 1.
+        max_curriculum = 2.
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
-        heading_command = False # if true: compute ang vel command from heading error
+        heading_command = True # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [-1.0, 2.0] # min max [m/s]
+            lin_vel_x = [-.5, 1.0] # min max [m/s]
             lin_vel_y = [-0.3, 0.3]   # min max [m/s]
             ang_vel_yaw = [-1.57, 1.57]    # min max [rad/s]
             heading = [-3.14, 3.14]
@@ -177,5 +188,5 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         amp_discr_hidden_dims = [1024, 512]
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4
-
+        LOG_WANDB = True
   
