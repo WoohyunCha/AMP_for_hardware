@@ -1,7 +1,7 @@
 import json
 
 # Define the input and output file paths
-file_name = 'processed_data_tocabi_walk'
+file_name = 'tocabi_data_scaled'
 input_file_path = file_name+'.txt'
 output_file_path = file_name+'.json'
 

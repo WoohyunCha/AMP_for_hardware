@@ -162,6 +162,7 @@ def quaternion_slerp(q0, q1, fraction, spin=0, shortestpath=True):
     out[ones_mask] = q1[ones_mask]
 
     d = torch.sum(q0 * q1, dim=-1, keepdim=True)
+    d = torch.clamp(d, -1.0, 1.0)
     dist_mask = (torch.abs(torch.abs(d) - 1.0) < _EPS).squeeze()
     out[dist_mask] = q0[dist_mask]
 
@@ -180,8 +181,8 @@ def quaternion_slerp(q0, q1, fraction, spin=0, shortestpath=True):
     final_mask = torch.logical_not(final_mask)
 
     isin = 1.0 / angle
-    q0 *= torch.sin((1.0 - fraction) * angle) * isin
-    q1 *= torch.sin(fraction * angle) * isin
-    q0 += q1
-    out[final_mask] = q0[final_mask]
+    # q0 *= torch.sin((1.0 - fraction) * angle) * isin
+    # q1 *= torch.sin(fraction * angle) * isin
+    # # q0 += q1
+    out[final_mask] = ((q0*torch.sin((1.0 - fraction) * angle) * isin) + (q1 * torch.sin(fraction * angle) * isin))[final_mask]
     return out

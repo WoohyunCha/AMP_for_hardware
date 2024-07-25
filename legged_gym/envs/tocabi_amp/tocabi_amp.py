@@ -252,13 +252,14 @@ class TOCABIAMP(LeggedRobot):
             self.obs_buf = torch.clone(self.privileged_obs_buf)
 
     def get_amp_observations(self):
-        # joint_pos = self.dof_pos
-        # foot_pos = self.foot_positions_in_base_frame(self.dof_pos).to(self.device)
-        # base_lin_vel = self.base_lin_vel
-        # base_ang_vel = self.base_ang_vel
-        # joint_vel = self.dof_vel
-        # z_pos = self.root_states[:, 2:3]
-        return torch.concat((self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions]), dim=-1)
+        base_height = self.root_states[:, 2].unsqueeze(-1)
+        # projected_gravity = self.projected_gravity
+        base_lin_vel = self.base_lin_vel
+        base_ang_vel = self.base_ang_vel
+        foot_pos = self.foot_positions_in_base_frame()
+        foot_rot = self.foot_rotations_in_base_frame()
+        ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos, foot_rot), dim=-1)
+        return ret
 
     def create_sim(self):
         """ Creates simulation, terrain and evironments
@@ -480,19 +481,19 @@ class TOCABIAMP(LeggedRobot):
             env_ids (List[int]): Environemnt ids
         """
         # base position
-        self._reset_root_states(env_ids=env_ids) # TODO: Reset condition is too off-distribution?
+        self._reset_root_states(env_ids=env_ids) 
         # root_pos = AMPLoader.get_root_pos_batch(frames)
         # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
-        # self.root_states[env_ids, :3] = root_pos
-        # root_orn = AMPLoader.get_root_rot_batch(frames)
-        # self.root_states[env_ids, 3:7] = root_orn
-        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
-        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
+        self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
+        root_orn = AMPLoader.get_root_rot_batch(frames)
+        self.root_states[env_ids, 3:7] = root_orn
+        self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
+        self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
 
-        # env_ids_int32 = env_ids.to(dtype=torch.int32)
-        # self.gym.set_actor_root_state_tensor_indexed(self.sim,
-        #                                              gymtorch.unwrap_tensor(self.root_states),
-        #                                              gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_actor_root_state_tensor_indexed(self.sim,
+                                                     gymtorch.unwrap_tensor(self.root_states),
+                                                     gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
         
         
 
@@ -597,7 +598,7 @@ class TOCABIAMP(LeggedRobot):
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
-        self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
+        self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,)
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
@@ -673,6 +674,24 @@ class TOCABIAMP(LeggedRobot):
             self.cfg.domain_rand.damping_multiplier_range[1]).float()
         
         return p_mult * self.p_gains, d_mult * self.d_gains
+
+    def foot_positions_in_base_frame(self):
+
+        feet_indices = self.feet_indices
+        feet_states = self.rb_states[:, feet_indices, :]
+        assert feet_states.shape == (self.num_envs, 2, 13), f"feet state shape is {feet_states.shape}"
+        Lfoot_positions_local = quat_rotate_inverse(self.base_quat ,feet_states[:, 0, :3] - self.root_states[:, :3]) 
+        Rfoot_positions_local = quat_rotate_inverse(self.base_quat ,feet_states[:, 1, :3] - self.root_states[:, :3]) 
+
+        return torch.concat((Lfoot_positions_local, Rfoot_positions_local), dim=-1)
+    
+    def foot_rotations_in_base_frame(self):
+        feet_indices = self.feet_indices
+        feet_states = self.rb_states[:, feet_indices, :]
+        assert feet_states.shape == (self.num_envs, 2, 13), f"feet state shape is {feet_states.shape}"
+        Lfoot_quat_local = quat_mul(quat_conjugate(self.base_quat), feet_states[:, 0, 3:7])
+        Rfoot_quat_local = quat_mul(quat_conjugate(self.base_quat), feet_states[:, 1, 3:7])
+        return torch.concat((Lfoot_quat_local, Rfoot_quat_local), dim=-1)
 
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
