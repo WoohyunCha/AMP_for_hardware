@@ -40,7 +40,7 @@ import torch
 from rsl_rl.algorithms import AMPPPO, PPO
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
 from rsl_rl.env import VecEnv
-from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator
+from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator, AMPCritic
 from rsl_rl.datasets.motion_loader import AMPLoader
 from rsl_rl.utils.utils import Normalizer
 from legged_gym.utils.helpers import class_to_dict
@@ -85,17 +85,25 @@ class AMPOnPolicyRunner:
             motion_files=self.cfg["amp_motion_files"])
         print("AMP data observation data size : ", amp_data.observation_dim)
         amp_normalizer = Normalizer(amp_data.observation_dim) # batchnorm. Updates its running averages (mean, std) of observations from batches of observations, and normalizes observations using them
-        discriminator = AMPDiscriminator( # Discriminator computes the reward and gradient penalty loss.
-            amp_data.observation_dim * 2,
-            train_cfg['runner']['amp_reward_coef'],
-            train_cfg['runner']['amp_discr_hidden_dims'], device,
-            train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
+        if self.cfg['wgan']:
+            print("WGAN is used!!!")
+            discriminator = AMPCritic(
+                amp_data.observation_dim * 2,
+                train_cfg['runner']['amp_reward_coef'],
+                train_cfg['runner']['amp_discr_hidden_dims'], device,
+                train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
+        else:
+            discriminator = AMPDiscriminator( # Discriminator computes the reward and gradient penalty loss.
+                amp_data.observation_dim * 2,
+                train_cfg['runner']['amp_reward_coef'],
+                train_cfg['runner']['amp_discr_hidden_dims'], device,
+                train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
 
         # self.discr: AMPDiscriminator = AMPDiscriminator()
         alg_class = eval(self.cfg["algorithm_class_name"]) # PPO
         min_std = (
             torch.tensor(self.cfg["min_normalized_std"], device=self.device) *
-            (torch.abs(self.env.dof_pos_limits[:, 1] - self.env.dof_pos_limits[:, 0])))
+            (torch.abs(self.env.dof_pos_limits[:, 1] - self.env.dof_pos_limits[:, 0]))[:self.env.num_actions])
         self.alg: PPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, **self.alg_cfg)
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
@@ -120,8 +128,8 @@ class AMPOnPolicyRunner:
 
             args = class_to_dict(train_cfg)
             wandb.config.update(args)
-            wandb.save(os.path.join(LEGGED_GYM_ENVS, experiment_name,'log'+ experiment_name+'_config.py'),policy="now")
-            wandb.save(os.path.join(LEGGED_GYM_ENVS, experiment_name,'log'+ experiment_name+'.py'), policy="now")
+            wandb.save(os.path.join(LEGGED_GYM_ENVS, experiment_name,experiment_name+'_config.py'),policy="now")
+            wandb.save(os.path.join(LEGGED_GYM_ENVS, experiment_name,experiment_name+'.py'), policy="now")
 
 
         _, _ = self.env.reset()
@@ -194,7 +202,6 @@ class AMPOnPolicyRunner:
                 self.log(locals())
             if it % self.save_interval == 0:
                 self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)))
-            ep_infos.clear()
             wandb_dict = {
                 "dt" : self.env.dt,
                 "Train/mean_policy_pred": mean_policy_pred,
@@ -202,6 +209,8 @@ class AMPOnPolicyRunner:
             }
             if it%10 == 0:
                 self.log_wandb(wandb_dict, locals())
+            ep_infos.clear()
+
         
         self.current_learning_iteration += num_learning_iterations
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
@@ -333,8 +342,8 @@ class AMPOnPolicyRunner:
             if len(locs['rewbuffer']) > 0:
                 wandb_dict['Train/mean_reward'] = statistics.mean(locs['rewbuffer'])
                 wandb_dict['Train/mean_episode_length_t'] = statistics.mean(locs['lenbuffer']) * wandb_dict['dt']
-                wandb_dict['Train/mean_episode_length'] = statistics.mean(locs['lenbuffer'])
                 wandb.log(wandb_dict)
+
 
     def save_wandb(self, model_path):
         if self.LOG_WANDB:

@@ -35,6 +35,7 @@ import torch.optim as optim
 from rsl_rl.modules import ActorCritic
 from rsl_rl.storage import RolloutStorage
 from rsl_rl.storage.replay_buffer import ReplayBuffer
+from rsl_rl.algorithms.amp_discriminator import AMPCritic
 
 class AMPPPO:
     actor_critic: ActorCritic
@@ -227,13 +228,30 @@ class AMPPPO:
                         expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
                 policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
                 expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
-                expert_loss = torch.nn.MSELoss()(
-                    expert_d, torch.ones(expert_d.size(), device=self.device))
-                policy_loss = torch.nn.MSELoss()(
-                    policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
-                amp_loss = 0.5 * (expert_loss + policy_loss)
-                grad_pen_loss = self.discriminator.compute_grad_pen( # already scaled with lambda
-                    *sample_amp_expert, lambda_=10)
+
+                if isinstance(self.discriminator, AMPCritic):
+                    # WGAN
+                    boundary = 0.3 # 0.1 ~ 0.5 is the proper range of selection
+                    expert_loss = -torch.nn.Tanh()(
+                        boundary*expert_d
+                    )
+                    policy_loss = torch.nn.Tanh()(
+                        boundary*policy_d
+                    )
+                    amp_loss = 0.5 * (expert_loss + policy_loss)
+                    grad_pen_loss = self.discriminator.compute_grad_pen(
+                        *sample_amp_expert, *sample_amp_policy,  lambda_=10)
+                else: 
+                    # LSGAN
+                    expert_loss = torch.nn.MSELoss()(
+                        expert_d, torch.ones(expert_d.size(), device=self.device))
+                    policy_loss = torch.nn.MSELoss()(
+                        policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                    amp_loss = (expert_loss + policy_loss) # *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen( # already scaled with lambda
+                        *sample_amp_expert, lambda_=5) # 10
+                
+
 
                 # Compute total loss.
                 loss = (

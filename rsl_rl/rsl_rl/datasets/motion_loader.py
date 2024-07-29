@@ -12,6 +12,8 @@ from rsl_rl.datasets import pose3d
 from rsl_rl.datasets import motion_util
 from isaacgym.torch_utils import *
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROCESSED_DATA_DIR = os.path.join(BASE_DIR, 'mocap_motions', 'AMP_trajectories')
 
 class AMPLoader:
     FRAME_TIME = 0
@@ -54,11 +56,11 @@ class AMPLoader:
     FOOT_ROT_END_IDX = FOOT_ROT_START_IDX + 2*ROT_SIZE
 
     HZ = 2000
-    REFERENCE_START_INDEX = int(5.6*HZ)
-    REFERENCE_END_INDEX = int(7.4005*HZ)
+    REFERENCE_START_INDEX = int(4.4*HZ)
+    REFERENCE_END_INDEX = int(5.6005*HZ)
     
 
-    BASE_PELVIS_OFFSET = (0.0585, 0, 0.0431)
+    BASE_PELVIS_OFFSET = (0., 0., 0.)
 
     def __init__(
             self,
@@ -104,10 +106,10 @@ class AMPLoader:
                 #              AMPLoader.ROT_SIZE)] = root_rot
                 
                 self.trajectories.append( # Only joint space
-                    self.process_data(motion_data)[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
+                    self.process_data(motion_data, i)[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
                     )
                 self.trajectories_full.append(
-                    self.process_data(motion_data)
+                    self.process_data(motion_data, i)
                 )
 
                 self.trajectory_idxs.append(i)
@@ -196,7 +198,7 @@ class AMPLoader:
             traj_mask = traj_idxs == traj_idx
             all_frame_starts[traj_mask] = trajectory[idx_low[traj_mask]]
             all_frame_ends[traj_mask] = trajectory[idx_high[traj_mask]]
-        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
+        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32, requires_grad=False).unsqueeze(-1)
         return self.slerp(all_frame_starts, all_frame_ends, blend)
 
     def get_full_frame_at_time(self, traj_idx, time):
@@ -250,7 +252,7 @@ class AMPLoader:
             all_frame_Rfoot_rot_ends[traj_mask] = trajectory[idx_high[traj_mask]][:, AMPLoader.FOOT_ROT_START_IDX+AMPLoader.ROT_SIZE:AMPLoader.FOOT_ROT_END_IDX]
         assert (~torch.isfinite(all_frame_Lfoot_rot_starts)).sum() == 0, f"low is {idx_low[traj_mask]}" #TODO
 
-        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
+        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32, requires_grad=False).unsqueeze(-1)
 
         pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend)
         rot_blend = self.slerp(all_frame_rot_starts, all_frame_rot_ends, blend)
@@ -263,7 +265,7 @@ class AMPLoader:
         assert (~torch.isfinite(all_frame_Lfoot_rot_ends)).sum() == 0, "ends is wrong?" #TODO
         assert (~torch.isfinite(Lfoot_rot_blend)).sum() == 0, "Blend is wrong?" #TODO
         Rfoot_rot_blend = utils.quaternion_slerp(all_frame_Rfoot_rot_starts, all_frame_Rfoot_rot_ends, blend)
-        ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend, Lfoot_rot_blend, Rfoot_rot_blend], dim=-1)
+        ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend, Lfoot_rot_blend, Rfoot_rot_blend], dim=-1) 
         return ret
 
     def get_frame(self):
@@ -310,7 +312,7 @@ class AMPLoader:
         Lfoot_rot0, Lfoot_rot1 = AMPLoader.get_foot_rot(frame0)[0:AMPLoader.ROT_SIZE], AMPLoader.get_foot_rot(frame1)[0:AMPLoader.ROT_SIZE]
         Rfoot_rot0, Rfoot_rot1 = AMPLoader.get_foot_rot(frame0)[AMPLoader.ROT_SIZE:], AMPLoader.get_foot_rot(frame1)[AMPLoader.ROT_SIZE:]
         
-        blend_root_pos = self.slerp(root_pos0, root_pos1, blend)
+        # blend_root_pos = self.slerp(root_pos0, root_pos1, blend)
         blend_root_rot = self.slerp(root_rot0, root_rot1, blend)
         blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
         blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
@@ -323,16 +325,17 @@ class AMPLoader:
             Rfoot_rot0.cpu().numpy(), Rfoot_rot1.cpu().numpy(), blend)
         blend_Lfoot_rot = torch.tensor(
             motion_util.standardize_quaternion(blend_Lfoot_rot),
-            dtype=torch.float32, device=self.device
+            dtype=torch.float32, device=self.device, requires_grad=False
         )
         blend_Rfoot_rot = torch.tensor(
             motion_util.standardize_quaternion(blend_Rfoot_rot),
-            dtype=torch.float32, device=self.device
+            dtype=torch.float32, device=self.device, requires_grad=False
         )
         ret = torch.cat([
             blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
             blend_foot_pos, blend_Lfoot_rot, blend_Rfoot_rot
             ], dim=-1)
+
         print(ret.shape)
         return ret
 
@@ -445,7 +448,7 @@ class AMPLoader:
         return poses[:, AMPLoader.FOOT_ROT_START_IDX:AMPLoader.FOOT_ROT_END_IDX]
 
 
-    def process_data(self, traj: np.ndarray): # Process raw data from Mujoco
+    def process_data(self, traj: np.ndarray, index: int): # Process raw data from Mujoco
         time = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX,0]
         pelv_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 1:4]
         pelv_rpy = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 4:7] # roll, pitch, yaw order
@@ -510,7 +513,11 @@ class AMPLoader:
         assert (~torch.isfinite(L_foot_quat_base_torch)).sum() == 0, "Found non finite element 7"
         R_foot_quat_base_torch = quat_mul(quat_conjugate(pelvis_quat), R_foot_quat_global_torch)
         assert (~torch.isfinite(R_foot_quat_base_torch)).sum() == 0, "Found non finite element 8"
-        ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1)
+        ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1) 
+        with open(os.path.join(PROCESSED_DATA_DIR, 'processed_data_'+str(index)+'.txt'), "w") as file:
+            for line in ret.cpu().numpy().tolist():
+                file.write(' '.join(map(str, line)) + '\n')
+            print(f"Processed data {index} written to txt file at "+PROCESSED_DATA_DIR)
         return ret
     
 
