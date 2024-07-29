@@ -101,12 +101,14 @@ class MotionRetarget():
         length_ratios = {}
         for key, val in target_edges:
             length_ratios[key] = val/self.source_edges[key]
-        
+        retarget_reference = np.zeros_like(target_referece)
+        for frame_idx in range(target_referece.shape[0]):
+            retarget_reference[frame_idx]
         #TODO
         # 1. FK to get global positions of each joint (we have global pos/ori of base link)
         # 2. Compute relative position vectors between joints, and scale them by length ratios
         # 3. Starting from base link, sum up the relative position vectors and transform back to base frame coordinates
-
+        # 4. Solve numerical IK from joint positions.
 
 ##########HELPER###########
 def quat_from_angle_axis(angle, axis: np.ndarray):
