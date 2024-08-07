@@ -1,5 +1,5 @@
 % Define the file path
-filename = '../data/raw/tocabi_data.txt';
+filename = '../data/raw/tocabi_data0.9.txt';
 
 % Open the file for reading
 fileID = fopen(filename, 'r');
@@ -15,7 +15,7 @@ dataMatrix = cell2mat(data);
 dataMatrix(:, 1) = dataMatrix(:, 1) / 2000;
 
 % Define the output file name (can be the same or different)
-outputFilename = '../data/scaled/tocabi_data_scaled.txt';
+outputFilename = '../data/scaled/tocabi_data0.9_scaled.txt';
 
 % Open the file for writing
 fileID = fopen(outputFilename, 'w');

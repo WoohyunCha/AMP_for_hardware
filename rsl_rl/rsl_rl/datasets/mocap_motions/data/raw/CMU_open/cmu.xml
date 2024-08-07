@@ -1,0 +1,281 @@
+<mujoco model="humanoid">
+    <compiler angle="degree" inertiafromgeom="true"/>
+    <default>
+        <joint armature="1" damping="1" limited="true"/>
+        <geom conaffinity="1" condim="3" friction="0.8 0.1 0.1" contype="1" margin="0.001" material="geom" rgba="0.8 0.6 .4 1"/>
+        <motor ctrllimited="true" ctrlrange="-.4 .4"/>
+    </default>
+    <option integrator="RK4" iterations="50" solver="PGS" timestep="0.003">
+        <!-- <flags solverstat="enable" energy="enable"/>-->
+    </option>
+    <size nkey="5" nuser_geom="1"/>
+    <visual>
+        <map fogend="5" fogstart="3"/>
+    </visual>
+    <worldbody>
+        <body name="base_link" pos="0 0 10">
+            <joint armature="0" damping="0" frictionloss="0" limited="false" name="virtual_joint" stiffness="0" type="free" /> <!--Added WH-->
+			<geom fromto="0 0 0 0 0 0" name="root" size="0.05" type="capsule" />
+			<geom contype="0" pos="0 0 0" name="vis_root" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+			<body name="L_HipRoll_Link" pos="0.057 0.124 -0.116">
+				<joint armature="0.1" damping="0.5" name="L_HipYaw_Joint" axis="0.0 0.94 0.342" stiffness="0.1739707389995719" type="hinge" range="-160.0 20.0" />
+				<body name="L_HipCenter_Link">
+					<joint armature="0.1" damping="0.5" name="L_HipRoll_Joint" axis="0.0 -0.342 0.94" stiffness="0.1739707389995719" type="hinge" range="-70.0 70.0" />
+					<body name="L_Thigh_Link">
+						<joint armature="0.1" damping="0.5" name="L_HipPitch_Joint" axis="1.0 0.0 0.0" stiffness="0.1739707389995719" type="hinge" range="-60.0 70.0" />
+						<body name="L_Knee_Link" pos="0.0 0.158 -0.434">
+							<joint armature="0.1" damping="0.5" name="L_Knee_Joint" axis="0.0 0.94 0.342" stiffness="0.1330280785824309" type="hinge" range="-10.0 170.0" />
+							<body name="L_AnkleCenter_Link" pos="0.0 0.169 -0.464">
+								<joint armature="0.1" damping="0.5" name="L_AnklePitch_Joint" axis="-0.0 0.94 0.342" stiffness="24.996000399968" type="hinge" range="-45.0 90.0" />
+								<body name="L_Foot" pos="0 0 0">
+									<joint armature="0.1" damping="0.5" name="L_AnkleRoll_Joint" axis="0.0 -0.342 0.94" stiffness="24.996000399968" type="hinge" range="-70.0 20.0" />
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+			<body name="R_HipRoll_Link" pos="0.057 -0.112 -0.116">
+				<joint armature="0.1" damping="0.5" name="R_HipYaw_Joint" axis="0.0 0.94 -0.342" stiffness="0.1739707389995719" type="hinge" range="-160.0 20.0" />
+				<body name="R_HipCenter_Link">
+					<joint armature="0.1" damping="0.5" name="R_HipRoll_Joint" axis="0.0 0.342 0.94" stiffness="0.1739707389995719" type="hinge" range="-70.0 70.0" />
+					<body name="R_Thigh_Link">
+						<joint armature="0.1" damping="0.5" name="R_HipPitch_Joint" axis="1.0 0.0 0.0" stiffness="0.1739707389995719" type="hinge" range="-60.0 70.0" />
+						<body name="R_Knee_Link" pos="0.0 -0.163 -0.448">
+							<joint armature="0.1" damping="0.5" name="R_Knee_Joint" axis="0.0 0.94 -0.342" stiffness="0.1330280785824309" type="hinge" range="-10.0 170.0" />
+							<body name="R_AnkleCenter_Link" pos="0.0 -0.163 -0.447">
+								<joint armature="0.1" damping="0.5" name="R_AnklePitch_Joint" axis="0.0 0.94 -0.342" stiffness="24.996000399968" type="hinge" range="-45.0 90.0" />
+								<body name="R_Foot" pos="0 0 0">
+									<joint armature="0.1" damping="0.5" name="R_AnkleRoll_Joint" axis="0.0 0.342 0.94" stiffness="24.996000399968" type="hinge" range="-70.0 20.0" />
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+
+			<!-- <body name="lhipjoint" pos="0.057 0.124 -0.116">
+
+			<body name="rhipjoint" pos="0.057 -0.112 -0.116">
+				<geom fromto="-0.057 0.112 0.116 0 0 0" name="rhipjoint" size="0.05" type="capsule" />
+				<geom contype="0" pos="-0.057 0.112 0.116" name="vis_rhipjoint" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+				<body name="rfemur" pos="0.0 -0.163 -0.448">
+					<geom fromto="-0.0 0.163 0.448 0 0 0" name="rfemur" size="0.05" type="capsule" />
+					<geom contype="0" pos="-0.0 0.163 0.448" name="vis_rfemur" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+					<joint armature="0.1" damping="0.5" name="R_HipYaw_Joint" axis="0.0 0.94 -0.342" pos="-0.0 0.163 0.448" stiffness="0.15263801659654605" type="hinge" range="-160.0 20.0" />
+					<body name="rfemur2">
+						<joint armature="0.1" damping="0.5" name="R_HipRoll_Joint" axis="0.0 0.342 0.94" pos="-0.0 0.163 0.448" stiffness="0.15263801659654605" type="hinge" range="-70.0 70.0" />
+						<body name="rfemur3">
+							<joint armature="0.1" damping="0.5" name="R_HipPitch_Joint" axis="1.0 0.0 0.0" pos="-0.0 0.163 0.448" stiffness="0.15263801659654605" type="hinge" range="-70.0 60.0" />
+							<body name="rtibia" pos="0.0 -0.163 -0.447">
+								<geom fromto="-0.0 0.163 0.447 0 0 0" name="rtibia" size="0.05" type="capsule" />
+								<geom contype="0" pos="-0.0 0.163 0.447" name="vis_rtibia" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+								<joint armature="0.1" damping="0.5" name="R_Knee_Joint" axis="0.0 0.94 -0.342" pos="-0.0 0.163 0.447" stiffness="0.1548196689718097" type="hinge" range="-10.0 170.0" />
+								<body name="rfoot" pos="0.135 -0.014 -0.038">
+									<geom fromto="-0.135 0.014 0.038 0 0 0" name="rfoot" size="0.05" type="capsule" />
+									<geom contype="0" pos="-0.135 0.014 0.038" name="vis_rfoot" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+									<joint armature="0.1" damping="0.5" name="R_AnklePitch_Joint" axis="0.0 0.94 -0.342" pos="-0.135 0.014 0.038" stiffness="20.117037140386355" type="hinge" range="-45.0 90.0" />
+									<body name="rfoot2">
+										<joint armature="0.1" damping="0.5" name="R_AnkleRoll_Joint" axis="0.0 0.342 0.94" pos="-0.135 0.014 0.038" stiffness="20.117037140386355" type="hinge" range="-20.0 70.0" />
+									 <body name="rtoes" pos="0.07 -0.0 -0.0">
+										<geom fromto="-0.07 0.0 0.0 0 0 0" name="rtoes" size="0.05" type="capsule" />
+										<geom contype="0" pos="-0.07 0.0 0.0" name="vis_rtoes" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+										<joint armature="0.1" damping="0.5" name="rtoes_x" axis="0.0 0.94 -0.342" pos="-0.07 0.0 0.0" stiffness="321.73849400089597" type="hinge" range="-90.0 20.0" />
+									</body> -->
+									<!-- </body>
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body> -->
+
+			<!-- <body name="lowerback" pos="-0.002 -0.001 0.149">
+				<geom fromto="0.002 0.001 -0.149 0 0 0" name="lowerback" size="0.05" type="capsule" />
+				<geom contype="0" pos="0.002 0.001 -0.149" name="vis_lowerback" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+				<joint armature="0.1" damping="0.5" name="lowerback_x" axis="0.0 1.0 0.0" pos="0.002 0.001 -0.149" stiffness="15.885966121271858" type="hinge" range="-20.0 45.0" />
+				<joint armature="0.1" damping="0.5" name="lowerback_y" axis="0.0 0.0 1.0" pos="0.002 0.001 -0.149" stiffness="15.885966121271858" type="hinge" range="-30.0 30.0" />
+				<joint armature="0.1" damping="0.5" name="lowerback_z" axis="1.0 0.0 0.0" pos="0.002 0.001 -0.149" stiffness="15.885966121271858" type="hinge" range="-30.0 30.0" />
+				<body name="upperback" pos="-0.013 0.004 0.146">
+					<geom fromto="0.013 -0.004 -0.146 0 0 0" name="upperback" size="0.05" type="capsule" />
+					<geom contype="0" pos="0.013 -0.004 -0.146" name="vis_upperback" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+					<joint armature="0.1" damping="0.5" name="upperback_x" axis="0.0 1.0 0.0" pos="0.013 -0.004 -0.146" stiffness="17.03720303767259" type="hinge" range="-20.0 45.0" />
+					<joint armature="0.1" damping="0.5" name="upperback_y" axis="0.0 0.0 1.0" pos="0.013 -0.004 -0.146" stiffness="17.03720303767259" type="hinge" range="-30.0 30.0" />
+					<joint armature="0.1" damping="0.5" name="upperback_z" axis="1.0 0.0 0.0" pos="0.013 -0.004 -0.146" stiffness="17.03720303767259" type="hinge" range="-30.0 30.0" />
+					<body name="thorax" pos="-0.011 0.004 0.147">
+						<geom fromto="0.011 -0.004 -0.147 0 0 0" name="thorax" size="0.05" type="capsule" />
+						<geom contype="0" pos="0.011 -0.004 -0.147" name="vis_thorax" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+						<joint armature="0.1" damping="0.5" name="thorax_x" axis="0.0 1.0 0.0" pos="0.011 -0.004 -0.147" stiffness="16.673410429283756" type="hinge" range="-20.0 45.0" />
+						<joint armature="0.1" damping="0.5" name="thorax_y" axis="0.0 0.0 1.0" pos="0.011 -0.004 -0.147" stiffness="16.673410429283756" type="hinge" range="-30.0 30.0" />
+						<joint armature="0.1" damping="0.5" name="thorax_z" axis="1.0 0.0 0.0" pos="0.011 -0.004 -0.147" stiffness="16.673410429283756" type="hinge" range="-30.0 30.0" />
+						<body name="lowerneck" pos="0.018 -0.008 0.095">
+							<geom fromto="-0.018 0.008 -0.095 0 0 0" name="lowerneck" size="0.05" type="capsule" />
+							<geom contype="0" pos="-0.018 0.008 -0.095" name="vis_lowerneck" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+							<joint armature="0.1" damping="0.5" name="lowerneck_x" axis="0.0 1.0 0.0" pos="-0.018 0.008 -0.095" stiffness="87.24694812544527" type="hinge" range="-20.0 45.0" />
+							<joint armature="0.1" damping="0.5" name="lowerneck_y" axis="0.0 0.0 1.0" pos="-0.018 0.008 -0.095" stiffness="87.24694812544527" type="hinge" range="-30.0 30.0" />
+							<joint armature="0.1" damping="0.5" name="lowerneck_z" axis="1.0 0.0 0.0" pos="-0.018 0.008 -0.095" stiffness="87.24694812544527" type="hinge" range="-30.0 30.0" />
+							<body name="upperneck" pos="-0.022 0.012 0.097">
+								<geom fromto="0.022 -0.012 -0.097 0 0 0" name="upperneck" size="0.05" type="capsule" />
+								<geom contype="0" pos="0.022 -0.012 -0.097" name="vis_upperneck" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+								<joint armature="0.1" damping="0.5" name="upperneck_x" axis="0.0 1.0 0.0" pos="0.022 -0.012 -0.097" stiffness="77.30796574012646" type="hinge" range="-20.0 45.0" />
+								<joint armature="0.1" damping="0.5" name="upperneck_y" axis="0.0 0.0 1.0" pos="0.022 -0.012 -0.097" stiffness="77.30796574012646" type="hinge" range="-30.0 30.0" />
+								<joint armature="0.1" damping="0.5" name="upperneck_z" axis="1.0 0.0 0.0" pos="0.022 -0.012 -0.097" stiffness="77.30796574012646" type="hinge" range="-30.0 30.0" />
+								<body name="head" pos="-0.01 0.005 0.101">
+									<geom fromto="0.01 -0.005 -0.101 0 0 0" name="head" size="0.05" type="capsule" />
+									<geom contype="0" pos="0.01 -0.005 -0.101" name="vis_head" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+									<joint armature="0.1" damping="0.5" name="head_x" axis="0.0 1.0 0.0" pos="0.01 -0.005 -0.101" stiffness="74.04264209425767" type="hinge" range="-20.0 45.0" />
+									<joint armature="0.1" damping="0.5" name="head_y" axis="0.0 0.0 1.0" pos="0.01 -0.005 -0.101" stiffness="74.04264209425767" type="hinge" range="-30.0 30.0" />
+									<joint armature="0.1" damping="0.5" name="head_z" axis="1.0 0.0 0.0" pos="0.01 -0.005 -0.101" stiffness="74.04264209425767" type="hinge" range="-30.0 30.0" />
+								</body>
+							</body>
+						</body>
+
+						<body name="lclavicle" pos="0.004 0.218 0.057">
+							<geom fromto="-0.004 -0.218 -0.057 0 0 0" name="lclavicle" size="0.05" type="capsule" />
+							<geom contype="0" pos="-0.004 -0.218 -0.057" name="vis_lclavicle" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+							<joint armature="0.1" damping="0.5" name="lclavicle_y" axis="0.0 0.0 1.0" pos="-0.004 -0.218 -0.057" stiffness="3.0395152991716987" type="hinge" range="-20.0 10.0" />
+							<joint armature="0.1" damping="0.5" name="lclavicle_z" axis="1.0 0.0 0.0" pos="-0.004 -0.218 -0.057" stiffness="3.0395152991716987" type="hinge" range="0.0 20.0" />
+							<body name="lhumerus" pos="0.0 0.331 -0.0">
+								<geom fromto="-0.0 -0.331 0.0 0 0 0" name="lhumerus" size="0.05" type="capsule" />
+								<geom contype="0" pos="-0.0 -0.331 0.0" name="vis_lhumerus" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+								<joint armature="0.1" damping="0.5" name="lhumerus_x" axis="0.5 0.0 -0.866" pos="-0.0 -0.331 0.0" stiffness="0.6568875077975643" type="hinge" range="-60.0 90.0" />
+								<joint armature="0.1" damping="0.5" name="lhumerus_y" axis="0.0 -1.0 0.0" pos="-0.0 -0.331 0.0" stiffness="0.6568875077975643" type="hinge" range="-90.0 90.0" />
+								<joint armature="0.1" damping="0.5" name="lhumerus_z" axis="-0.866 -0.0 -0.5" pos="-0.0 -0.331 0.0" stiffness="0.6568875077975643" type="hinge" range="-90.0 90.0" />
+								<body name="lradius" pos="0.0 0.224 -0.0">
+									<geom fromto="-0.0 -0.224 0.0 0 0 0" name="lradius" size="0.05" type="capsule" />
+									<geom contype="0" pos="-0.0 -0.224 0.0" name="vis_lradius" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+									<joint armature="0.1" damping="0.5" name="lradius_x" axis="0.5 0.0 -0.866" pos="-0.0 -0.224 0.0" stiffness="3.1476811403816076" type="hinge" range="-10.0 170.0" />
+									<body name="lwrist" pos="0.0 0.112 -0.0">
+										<geom fromto="-0.0 -0.112 0.0 0 0 0" name="lwrist" size="0.05" type="capsule" />
+										<geom contype="0" pos="-0.0 -0.112 0.0" name="vis_lwrist" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+										<joint armature="0.1" damping="0.5" name="lwrist_y" axis="0.0 -1.0 -0.0" pos="-0.0 -0.112 0.0" stiffness="50.362298247615804" type="hinge" range="-180.0 0.0" />
+										<body name="lhand" pos="0.0 0.053 -0.0">
+											<geom fromto="-0.0 -0.053 0.0 0 0 0" name="lhand" size="0.05" type="capsule" />
+											<geom contype="0" pos="-0.0 -0.053 0.0" name="vis_lhand" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+											<joint armature="0.1" damping="0.5" name="lhand_x" axis="-1.0 0.0 0.0" pos="-0.0 -0.053 0.0" stiffness="991.5035559017156" type="hinge" range="-90.0 90.0" />
+											<joint armature="0.1" damping="0.5" name="lhand_z" axis="0.0 -0.0 1.0" pos="-0.0 -0.053 0.0" stiffness="991.5035559017156" type="hinge" range="-45.0 45.0" />
+											<body name="lfingers" pos="0.0 0.043 -0.0">
+												<geom fromto="-0.0 -0.043 0.0 0 0 0" name="lfingers" size="0.05" type="capsule" />
+												<geom contype="0" pos="-0.0 -0.043 0.0" name="vis_lfingers" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+												<joint armature="0.1" damping="0.5" name="lfingers_x" axis="-1.0 0.0 0.0" pos="-0.0 -0.043 0.0" stiffness="2346.7532412858723" type="hinge" range="0.0 90.0" />
+											</body>
+										</body>
+
+										<body name="lthumb" pos="0.043 0.043 -0.0">
+											<geom fromto="-0.043 -0.043 0.0 0 0 0" name="lthumb" size="0.05" type="capsule" />
+											<geom contype="0" pos="-0.043 -0.043 0.0" name="vis_lthumb" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+											<joint armature="0.1" damping="0.5" name="lthumb_x" axis="-0.707 0.707 -0.0" pos="-0.043 -0.043 0.0" stiffness="552.1858513111092" type="hinge" range="-45.0 45.0" />
+											<joint armature="0.1" damping="0.5" name="lthumb_z" axis="0.0 0.0 1.0" pos="-0.043 -0.043 0.0" stiffness="552.1858513111092" type="hinge" range="-45.0 45.0" />
+										</body>
+									</body>
+								</body>
+							</body>
+						</body>
+
+						<body name="rclavicle" pos="0.023 -0.216 0.068">
+							<geom fromto="-0.023 0.216 -0.068 0 0 0" name="rclavicle" size="0.05" type="capsule" />
+							<geom contype="0" pos="-0.023 0.216 -0.068" name="vis_rclavicle" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+							<joint armature="0.1" damping="0.5" name="rclavicle_y" axis="0.0 0.0 1.0" pos="-0.023 0.216 -0.068" stiffness="2.928474391395748" type="hinge" range="-10.0 20.0" />
+							<joint armature="0.1" damping="0.5" name="rclavicle_z" axis="1.0 0.0 0.0" pos="-0.023 0.216 -0.068" stiffness="2.928474391395748" type="hinge" range="-20.0 0.0" />
+							<body name="rhumerus" pos="-0.0 -0.348 -0.0">
+								<geom fromto="0.0 0.348 0.0 0 0 0" name="rhumerus" size="0.05" type="capsule" />
+								<geom contype="0" pos="0.0 0.348 0.0" name="vis_rhumerus" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+								<joint armature="0.1" damping="0.5" name="rhumerus_x" axis="-0.5 0.0 0.866" pos="0.0 0.348 0.0" stiffness="0.5393209370513105" type="hinge" range="-90.0 60.0" />
+								<joint armature="0.1" damping="0.5" name="rhumerus_y" axis="0.0 1.0 0.0" pos="0.0 0.348 0.0" stiffness="0.5393209370513105" type="hinge" range="-90.0 90.0" />
+								<joint armature="0.1" damping="0.5" name="rhumerus_z" axis="-0.866 0.0 -0.5" pos="0.0 0.348 0.0" stiffness="0.5393209370513105" type="hinge" range="-90.0 90.0" />
+								<body name="rradius" pos="0.0 -0.224 -0.0">
+									<geom fromto="-0.0 0.224 0.0 0 0 0" name="rradius" size="0.05" type="capsule" />
+									<geom contype="0" pos="-0.0 0.224 0.0" name="vis_rradius" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+									<joint armature="0.1" damping="0.5" name="rradius_x" axis="-0.5 0.0 0.866" pos="-0.0 0.224 0.0" stiffness="3.119601117560654" type="hinge" range="-10.0 170.0" />
+									<body name="rwrist" pos="0.0 -0.112 -0.0">
+										<geom fromto="-0.0 0.112 0.0 0 0 0" name="rwrist" size="0.05" type="capsule" />
+										<geom contype="0" pos="-0.0 0.112 0.0" name="vis_rwrist" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+										<joint armature="0.1" damping="0.5" name="rwrist_y" axis="0.0 1.0 -0.0" pos="-0.0 0.112 0.0" stiffness="49.91361788097046" type="hinge" range="-180.0 0.0" />
+										<body name="rhand" pos="0.0 -0.041 -0.0">
+											<geom fromto="-0.0 0.041 0.0 0 0 0" name="rhand" size="0.05" type="capsule" />
+											<geom contype="0" pos="-0.0 0.041 0.0" name="vis_rhand" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+											<joint armature="0.1" damping="0.5" name="rhand_x" axis="1.0 0.0 0.0" pos="-0.0 0.041 0.0" stiffness="2699.290554689247" type="hinge" range="-90.0 90.0" />
+											<joint armature="0.1" damping="0.5" name="rhand_z" axis="0.0 0.0 1.0" pos="-0.0 0.041 0.0" stiffness="2699.290554689247" type="hinge" range="-45.0 45.0" />
+											<body name="rfingers" pos="0.0 -0.033 -0.0">
+												<geom fromto="-0.0 0.033 0.0 0 0 0" name="rfingers" size="0.05" type="capsule" />
+												<geom contype="0" pos="-0.0 0.033 0.0" name="vis_rfingers" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+												<joint armature="0.1" damping="0.5" name="rfingers_x" axis="1.0 0.0 0.0" pos="-0.0 0.033 0.0" stiffness="6388.850555543209" type="hinge" range="0.0 90.0" />
+											</body>
+										</body>
+
+										<body name="rthumb" pos="0.034 -0.034 -0.0">
+											<geom fromto="-0.034 0.034 0.0 0 0 0" name="rthumb" size="0.05" type="capsule" />
+											<geom contype="0" pos="-0.034 0.034 0.0" name="vis_rthumb" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+											<joint armature="0.1" damping="0.5" name="rthumb_x" axis="0.707 0.707 0.0" pos="-0.034 0.034 0.0" stiffness="1503.2793366210838" type="hinge" range="-45.0 45.0" />
+											<joint armature="0.1" damping="0.5" name="rthumb_z" axis="0.0 -0.0 1.0" pos="-0.034 0.034 0.0" stiffness="1503.2793366210838" type="hinge" range="-45.0 45.0" />
+										</body>
+									</body>
+								</body>
+							</body>
+						</body>
+					</body> -->
+				<!-- </body> -->
+			<!-- </body> -->
+		</body>
+	</worldbody>
+    <tendon>
+    </tendon>
+    <actuator><!-- this section is not supported, same constants in code -->
+		<motor gear="100" joint="lfemur_x" name="lfemur_x"/>
+		<motor gear="100" joint="lfemur_y" name="lfemur_y"/>
+		<motor gear="100" joint="lfemur_z" name="lfemur_z"/>
+		<motor gear="100" joint="ltibia_x" name="ltibia_x"/>
+		<motor gear="100" joint="lfoot_x" name="lfoot_x"/>
+		<motor gear="100" joint="lfoot_z" name="lfoot_z"/>
+		<motor gear="100" joint="ltoes_x" name="ltoes_x"/>
+		<motor gear="100" joint="rfemur_x" name="rfemur_x"/>
+		<motor gear="100" joint="rfemur_y" name="rfemur_y"/>
+		<motor gear="100" joint="rfemur_z" name="rfemur_z"/>
+		<motor gear="100" joint="rtibia_x" name="rtibia_x"/>
+		<motor gear="100" joint="rfoot_x" name="rfoot_x"/>
+		<motor gear="100" joint="rfoot_z" name="rfoot_z"/>
+		<motor gear="100" joint="rtoes_x" name="rtoes_x"/>
+		<motor gear="100" joint="lowerback_x" name="lowerback_x"/>
+		<motor gear="100" joint="lowerback_y" name="lowerback_y"/>
+		<motor gear="100" joint="lowerback_z" name="lowerback_z"/>
+		<motor gear="100" joint="upperback_x" name="upperback_x"/>
+		<motor gear="100" joint="upperback_y" name="upperback_y"/>
+		<motor gear="100" joint="upperback_z" name="upperback_z"/>
+		<motor gear="100" joint="thorax_x" name="thorax_x"/>
+		<motor gear="100" joint="thorax_y" name="thorax_y"/>
+		<motor gear="100" joint="thorax_z" name="thorax_z"/>
+		<motor gear="100" joint="lowerneck_x" name="lowerneck_x"/>
+		<motor gear="100" joint="lowerneck_y" name="lowerneck_y"/>
+		<motor gear="100" joint="lowerneck_z" name="lowerneck_z"/>
+		<motor gear="100" joint="upperneck_x" name="upperneck_x"/>
+		<motor gear="100" joint="upperneck_y" name="upperneck_y"/>
+		<motor gear="100" joint="upperneck_z" name="upperneck_z"/>
+		<motor gear="100" joint="head_x" name="head_x"/>
+		<motor gear="100" joint="head_y" name="head_y"/>
+		<motor gear="100" joint="head_z" name="head_z"/>
+		<motor gear="100" joint="lclavicle_y" name="lclavicle_y"/>
+		<motor gear="100" joint="lclavicle_z" name="lclavicle_z"/>
+		<motor gear="100" joint="lhumerus_x" name="lhumerus_x"/>
+		<motor gear="100" joint="lhumerus_y" name="lhumerus_y"/>
+		<motor gear="100" joint="lhumerus_z" name="lhumerus_z"/>
+		<motor gear="100" joint="lradius_x" name="lradius_x"/>
+		<motor gear="100" joint="lwrist_y" name="lwrist_y"/>
+		<motor gear="100" joint="lhand_x" name="lhand_x"/>
+		<motor gear="100" joint="lhand_z" name="lhand_z"/>
+		<motor gear="100" joint="lfingers_x" name="lfingers_x"/>
+		<motor gear="100" joint="lthumb_x" name="lthumb_x"/>
+		<motor gear="100" joint="lthumb_z" name="lthumb_z"/>
+		<motor gear="100" joint="rclavicle_y" name="rclavicle_y"/>
+		<motor gear="100" joint="rclavicle_z" name="rclavicle_z"/>
+		<motor gear="100" joint="rhumerus_x" name="rhumerus_x"/>
+		<motor gear="100" joint="rhumerus_y" name="rhumerus_y"/>
+		<motor gear="100" joint="rhumerus_z" name="rhumerus_z"/>
+		<motor gear="100" joint="rradius_x" name="rradius_x"/>
+		<motor gear="100" joint="rwrist_y" name="rwrist_y"/>
+		<motor gear="100" joint="rhand_x" name="rhand_x"/>
+		<motor gear="100" joint="rhand_z" name="rhand_z"/>
+		<motor gear="100" joint="rfingers_x" name="rfingers_x"/>
+		<motor gear="100" joint="rthumb_x" name="rthumb_x"/>
+		<motor gear="100" joint="rthumb_z" name="rthumb_z"/>
+    </actuator>
+</mujoco>

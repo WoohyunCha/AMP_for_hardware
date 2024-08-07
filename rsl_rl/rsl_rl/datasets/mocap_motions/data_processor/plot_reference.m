@@ -1,5 +1,5 @@
 % Define the file path
-filename = '../AMP_trajectories/processed_data_1.txt';
+filename = '../AMP_trajectories/processed_data_2.txt';
 
 % Open the file for reading
 fileID = fopen(filename, 'r');

@@ -1,8 +1,8 @@
 import json
 
 # Define the input and output file paths
-input_file_path = '../data/scaled/tocabi_data_scaled.txt'
-output_file_path = '../tocabi_data_scaled.json'
+input_file_path = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/scaled/tocabi_data_4x.txt'
+output_file_path = '../tocabi_data_scaled_4x.json'
 
 # Read the input file
 with open(input_file_path, 'r') as file:

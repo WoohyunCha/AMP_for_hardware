@@ -37,9 +37,29 @@ from legged_gym.envs import *
 from legged_gym.utils import get_args, task_registry
 import torch
 
+import itertools
+
+reward_scales = [1., 10., 20., 50.]
+task_reward_lerps = [0.5, 0.7, 0.9]
+tracking_sigmas = [0.1, 0.2, 0.4]
+
+# def train(args):
+    
+#     for reward_scale, task_reward_lerp, tracking_sigma, wgan, reference_state_initialization_prob in itertools.product(reward_scales, task_reward_lerps, tracking_sigmas, reference_state_initialization_probs):
+#         env, env_cfg = task_registry.make_env(name=args.task, args=args)
+#         for key, val in env.reward_scales.items():
+#             env.reward_scales[key] = val*reward_scale
+#         env.cfg.rewards.tracking_sigma = tracking_sigma
+#         env.reference_state_initialization_prob = reference_state_initialization_prob
+#         ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args)
+#         ppo_runner
+#         ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
+#         env.destroy_sim()
+
 def train(args):
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args)
+    ppo_runner
     ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
 
 if __name__ == '__main__':

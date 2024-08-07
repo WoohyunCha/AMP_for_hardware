@@ -59,6 +59,7 @@ class AMPPPO:
                  device='cpu',
                  amp_replay_buffer_size=100000,
                  min_std=None,
+                 disc_coef=5.
                  ):
 
         self.device = device
@@ -98,6 +99,7 @@ class AMPPPO:
         self.num_mini_batches = num_mini_batches
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
+        self.disc_coef = disc_coef
         self.gamma = gamma
         self.lam = lam
         self.max_grad_norm = max_grad_norm
@@ -228,17 +230,16 @@ class AMPPPO:
                         expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
                 policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
                 expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
-
                 if isinstance(self.discriminator, AMPCritic):
                     # WGAN
                     boundary = 0.3 # 0.1 ~ 0.5 is the proper range of selection
                     expert_loss = -torch.nn.Tanh()(
                         boundary*expert_d
-                    )
+                    ).mean()
                     policy_loss = torch.nn.Tanh()(
                         boundary*policy_d
-                    )
-                    amp_loss = 0.5 * (expert_loss + policy_loss)
+                    ).mean()
+                    amp_loss = (expert_loss + policy_loss) *0.5
                     grad_pen_loss = self.discriminator.compute_grad_pen(
                         *sample_amp_expert, *sample_amp_policy,  lambda_=10)
                 else: 
@@ -247,9 +248,9 @@ class AMPPPO:
                         expert_d, torch.ones(expert_d.size(), device=self.device))
                     policy_loss = torch.nn.MSELoss()(
                         policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
-                    amp_loss = (expert_loss + policy_loss) # *0.5
+                    amp_loss = (expert_loss + policy_loss) *0.5
                     grad_pen_loss = self.discriminator.compute_grad_pen( # already scaled with lambda
-                        *sample_amp_expert, lambda_=5) # 10
+                        *sample_amp_expert, lambda_=10) 
                 
 
 
@@ -258,8 +259,9 @@ class AMPPPO:
                     surrogate_loss +
                     self.value_loss_coef * value_loss -
                     self.entropy_coef * entropy_batch.mean() +
-                    amp_loss + grad_pen_loss)
-
+                    self.disc_coef*(amp_loss + grad_pen_loss)
+                    )
+                
                 # Gradient step
                 self.optimizer.zero_grad()
                 loss.backward()

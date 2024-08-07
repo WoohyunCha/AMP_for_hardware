@@ -1,5 +1,5 @@
 % Define the file path
-filename = '../data/raw/tocabi_data.txt';
+filename = '../data/raw/tocabi_data0.6.txt';
 
 % Open the file for reading
 fileID = fopen(filename, 'r');

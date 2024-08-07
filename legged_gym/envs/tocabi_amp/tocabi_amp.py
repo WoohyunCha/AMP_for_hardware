@@ -120,10 +120,6 @@ class TOCABIAMP(LeggedRobot):
         self.base_quat[:] = self.root_states[:, 3:7]
         self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
-        # running average for smoother reward
-        alpha = 0.5
-        self.average_base_lin_vel = alpha * self.base_lin_vel + (1-alpha) * self.average_base_lin_vel
-        self.average_base_ang_vel = alpha * self.base_ang_vel + (1-alpha) * self.average_base_ang_vel
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
 
         self._post_physics_step_callback()
@@ -175,14 +171,10 @@ class TOCABIAMP(LeggedRobot):
             self.update_command_curriculum(env_ids)
         
         # reset robot states
-        if self.cfg.env.reference_state_initialization: # changed
-            if np.random.uniform() < self.reference_state_initialization_prob:
-                frames = self.amp_loader.get_full_frame_batch(len(env_ids))
-                self._reset_dofs_amp(env_ids, frames)
-                self._reset_root_states_amp(env_ids, frames)
-            else: 
-                self._reset_dofs(env_ids)
-                self._reset_root_states(env_ids)
+        if self.cfg.env.reference_state_initialization and np.random.uniform() < self.reference_state_initialization_prob:
+            frames = self.amp_loader.get_full_frame_batch(len(env_ids))
+            self._reset_dofs_amp(env_ids, frames)
+            self._reset_root_states_amp(env_ids, frames)
         else:
             self._reset_dofs(env_ids)
             self._reset_root_states(env_ids)
@@ -254,9 +246,9 @@ class TOCABIAMP(LeggedRobot):
         if self.add_noise:
             self.privileged_obs_buf += (2 * torch.rand_like(self.privileged_obs_buf) - 1) * self.noise_scale_vec
 
-        # Remove velocity observations from policy observation.
+        # Remove velocity observations from policy observation. 
         if self.num_obs == self.num_privileged_obs - 6:
-            self.obs_buf = self.privileged_obs_buf[:, 6:]
+            self.obs_buf = self.privileged_obs_buf[:, 6:] #change
         else:
             self.obs_buf = torch.clone(self.privileged_obs_buf)
 
@@ -266,8 +258,8 @@ class TOCABIAMP(LeggedRobot):
         base_lin_vel = self.base_lin_vel
         base_ang_vel = self.base_ang_vel
         foot_pos = self.foot_positions_in_base_frame()
-        foot_rot = self.foot_rotations_in_base_frame()
-        ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos, foot_rot), dim=-1)     
+        # foot_rot = self.foot_rotations_in_base_frame()
+        ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         return ret
 
     def create_sim(self):
@@ -358,25 +350,45 @@ class TOCABIAMP(LeggedRobot):
 
 
     def _process_actuator_props(self, props, env_id):
+
         """ Callback allowing to store/change/randomize the actuator properties of each environment.
+
             Called During environment creation.
+
             Base behavior: stores position, velocity and torques limits defined in the URDF
 
+
+
         Args:
+
             props (numpy.array): Properties of each actuator of the asset
+
             env_id (int): Environment id
 
+
+
         Returns:
+
             [numpy.array]: Modified actuator properties
+
         """
+
         if env_id==0:
+
             # print(dir(props[0]))
+
 #             print(props[0].lower_control_limit)
+
             # print(props[0].upper_control_limit)
+
             self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+
             for i in range(len(props)):
+
                 self.torque_limits[i] = props[i].upper_control_limit
+
                 # soft limits
+
         return props
 
     def _process_rigid_body_props(self, props, env_id):
@@ -477,7 +489,7 @@ class TOCABIAMP(LeggedRobot):
         """
         self.dof_pos[env_ids] = self.default_dof_pos * torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
         self.dof_vel[env_ids] = 0.
-        
+
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
@@ -494,9 +506,12 @@ class TOCABIAMP(LeggedRobot):
         """
 
         self.dof_pos[env_ids, self.num_actions:] = self.default_dof_pos[:, self.num_actions:]
+
         self.dof_vel[env_ids] = 0.
+
         self.dof_pos[env_ids, :self.num_actions] = AMPLoader.get_joint_pose_batch(frames)
-        self.dof_vel[env_ids, :self.num_actions] = AMPLoader.get_joint_vel_batch(frames)
+
+        self.dof_vel[env_ids, :self.num_actions] = AMPLoader.get_joint_vel_batch(frames)       
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
@@ -535,15 +550,12 @@ class TOCABIAMP(LeggedRobot):
         self._reset_root_states(env_ids=env_ids) 
         # root_pos = AMPLoader.get_root_pos_batch(frames)
         # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
-        # self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze() #change
+        self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
         root_orn = AMPLoader.get_root_rot_batch(frames)
         self.root_states[env_ids, 3:7] = root_orn
         self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
         self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
-        # must compute average velocities here, so that they are properly updated post physics step
-        self.base_quat[env_ids] = self.root_states[env_ids, 3:7]
-        self.average_base_lin_vel[env_ids, :] = quat_rotate_inverse(self.base_quat[env_ids, :], self.root_states[env_ids, 7:10])
-        self.average_base_ang_vel[env_ids, :] = quat_rotate_inverse(self.base_quat[env_ids, :], self.root_states[env_ids, 10:13])
+
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
                                                      gymtorch.unwrap_tensor(self.root_states),
@@ -644,9 +656,12 @@ class TOCABIAMP(LeggedRobot):
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
+
         self.torques = torch.zeros(self.num_envs, len(self.cfg.init_state.default_joint_angles), dtype=torch.float, device=self.device, requires_grad=False)
+
         self.p_gains = torch.zeros(len(self.cfg.init_state.default_joint_angles), dtype=torch.float, device=self.device, requires_grad=False)
-        self.d_gains = torch.zeros(len(self.cfg.init_state.default_joint_angles), dtype=torch.float, device=self.device, requires_grad=False)
+
+        self.d_gains = torch.zeros(len(self.cfg.init_state.default_joint_angles), dtype=torch.float, device=self.device, requires_grad=False)        
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
@@ -657,8 +672,6 @@ class TOCABIAMP(LeggedRobot):
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
-        self.average_base_lin_vel = self.base_lin_vel
-        self.average_base_ang_vel = self.base_ang_vel
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
         if self.cfg.terrain.measure_heights:
             self.height_points = self._init_height_points()
@@ -857,7 +870,6 @@ class TOCABIAMP(LeggedRobot):
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
         self.body_names_dict = self.gym.get_asset_rigid_body_dict(robot_asset)
-        print(self.body_names_dict)
         self.body_to_shapes = self.gym.get_asset_rigid_body_shape_indices(robot_asset)
         self.dof_names = self.gym.get_asset_dof_names(robot_asset)
         self.num_bodies = len(body_names)
@@ -891,7 +903,7 @@ class TOCABIAMP(LeggedRobot):
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
             dof_props = self._process_dof_props(dof_props_asset, i)
             actuator_props = self._process_actuator_props(actuator_props, i)
-            self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props) #TODO
+            self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
             body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
             body_props = self._process_rigid_body_props(body_props, i)
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
@@ -1023,28 +1035,4 @@ class TOCABIAMP(LeggedRobot):
         heights = torch.min(heights, heights3)
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
-
     #------------ reward functions----------------
-    def _reward_tracking_lin_vel(self): # TODO for forward walking only
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.average_base_lin_vel[:, :2]), dim=1)
-        return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)    
-    def _reward_tracking_ang_vel(self):
-        ang_vel_error = torch.square(self.commands[:, 2] - self.average_base_ang_vel[:, 2])
-        return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)  
-                
-    #     # Tracking of linear velocity commands (xy axes)
-    #     forward = quat_apply(self.base_quat, self.forward_vec)
-    #     current_heading = torch.atan2(forward[:, 1], forward[:, 0])
-    #     heading_angle = self.commands[:, 3]
-    #     heading_x = torch.cos(heading_angle).unsqueeze(-1)
-    #     heading_y = torch.sin(heading_angle).unsqueeze(-1)
-    #     heading = torch.concat((heading_x, heading_y, torch.zeros_like(heading_x)), dim=-1) # global
-    #     heading = quat_rotate_inverse(self.base_quat, heading)
-    #     current_speed = (heading*self.base_lin_vel).sum(dim=-1)
-    #     lin_vel_error = torch.square(self.commands[:, 0] - current_speed)
-    #     return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)
-
-    # def _reward_tracking_ang_vel(self):
-    #     # Tracking of angular velocity commands (yaw) 
-    #     ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-    #     return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)

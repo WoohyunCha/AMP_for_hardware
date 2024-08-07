@@ -32,8 +32,7 @@ import glob
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
 # MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/*.json')
-# MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_0.3.json')
-MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_data_scaled.json')
+MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_data_scaled_1_0x.json')
 
 
 class TOCABIAMPCfg( LeggedRobotCfg ):
@@ -41,118 +40,203 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
     class env( LeggedRobotCfg.env ):
         num_envs = 4096
         include_history_steps = None  # Number of steps of history to include.
-        num_observations = 42
+        num_observations = 48 # change 42
         num_privileged_obs = 48
-        reference_state_initialization = True   
-        reference_state_initialization_prob = 0.85
+        reference_state_initialization = True
+        reference_state_initialization_prob = 1. #0.85
         amp_motion_files = MOTION_FILES
         episode_length_s = 20 # episode length in seconds
         num_actions = 12
 
+
     class init_state( LeggedRobotCfg.init_state ):
+
         pos = [0.0, 0.0, 0.929869] # x,y,z [m]
+
         rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
+
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
+
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
+
         default_joint_angles = { # = target angles [rad] when action = 0.0
+
             'L_HipYaw_Joint': 0.0,
+
             'L_HipRoll_Joint': 0.0,
+
             'L_HipPitch_Joint': -0.28,
+
             'L_Knee_Joint': 0.6,
+
             'L_AnklePitch_Joint': -0.32,
+
             'L_AnkleRoll_Joint': 0.0,
 
+
+
             'R_HipYaw_Joint': 0.0,
+
             'R_HipRoll_Joint': 0.0,
+
             'R_HipPitch_Joint': -0.28,
+
             'R_Knee_Joint': 0.6,
+
             'R_AnklePitch_Joint': -0.32,
+
             'R_AnkleRoll_Joint': 0.0,
 
+
+
             "Waist1_Joint" : 0.,
+
             "Waist2_Joint" : 0.,
+
             "Upperbody_Joint" : 0.,
+
             "L_Shoulder1_Joint" : 0.3,
+
             "L_Shoulder2_Joint" : 0.174533,
+
             "L_Shoulder3_Joint" : 1.22173,
+
             "L_Armlink_Joint" : -1.27,
+
             "L_Elbow_Joint" : -1.57,
+
             "L_Forearm_Joint" : 0.,
+
             "L_Wrist1_Joint" : -1.,
+
             "L_Wrist2_Joint" : 0.,
+
             "Neck_Joint" : 0.,
+
             "Head_Joint" : 0.,
+
             "R_Shoulder1_Joint" : -0.3,
+
             "R_Shoulder2_Joint" : -0.174533,
+
             "R_Shoulder3_Joint" : -1.22173,
+
             "R_Armlink_Joint" : 1.27,
+
             "R_Elbow_Joint" : 1.57,
+
             "R_Forearm_Joint" : 0,
+
             "R_Wrist1_Joint" : 1,
+
             "R_Wrist2_Joint" : 0,
+
         }
 
+
     class control( LeggedRobotCfg.control ):
+
         # PD Drive parameters:
+
         control_type = 'T'
+
         stiffness = {"L_HipYaw_Joint": 2000.0, "L_HipRoll_Joint": 5000.0, "L_HipPitch_Joint": 4000.0,
+
             "L_Knee_Joint": 3700.0, "L_AnklePitch_Joint": 3200.0, "L_AnkleRoll_Joint": 3200.0,
+
             "R_HipYaw_Joint": 2000.0, "R_HipRoll_Joint": 5000.0, "R_HipPitch_Joint": 4000.0,
+
             "R_Knee_Joint": 3700.0, "R_AnklePitch_Joint": 3200.0, "R_AnkleRoll_Joint": 3200.0,
+
+
 
             "Waist1_Joint": 6000.0, "Waist2_Joint": 10000.0, "Upperbody_Joint": 10000.0,
 
+
+
             "L_Shoulder1_Joint": 400.0, "L_Shoulder2_Joint": 1000.0, "L_Shoulder3_Joint": 400.0, "L_Armlink_Joint": 400.0,
+
             "L_Elbow_Joint": 400.0, "L_Forearm_Joint": 400.0, "L_Wrist1_Joint": 100.0, "L_Wrist2_Joint": 100.0,
+
+
 
             "Neck_Joint": 100.0, "Head_Joint": 100.0,            
 
+
+
             "R_Shoulder1_Joint": 400.0, "R_Shoulder2_Joint": 1000.0, "R_Shoulder3_Joint": 400.0, "R_Armlink_Joint": 400.0,
+
             "R_Elbow_Joint": 400.0, "R_Forearm_Joint": 400.0, "R_Wrist1_Joint": 100.0, "R_Wrist2_Joint": 100.0}  # [N*m/rad]
+
         damping = {"L_HipYaw_Joint": 15.0, "L_HipRoll_Joint": 50.0, "L_HipPitch_Joint": 20.0,
+
             "L_Knee_Joint": 25.0, "L_AnklePitch_Joint": 24.0, "L_AnkleRoll_Joint": 24.0,
+
             "R_HipYaw_Joint": 15.0, "R_HipRoll_Joint": 50.0, "R_HipPitch_Joint": 20.0,
+
             "R_Knee_Joint": 25.0, "R_AnklePitch_Joint": 24.0, "R_AnkleRoll_Joint": 24.0,
+
+
 
             "Waist1_Joint": 200.0, "Waist2_Joint": 100.0, "Upperbody_Joint": 100.0,
 
+
+
             "L_Shoulder1_Joint": 10.0, "L_Shoulder2_Joint": 28.0, "L_Shoulder3_Joint": 10.0, "L_Armlink_Joint": 10.0,
+
             "L_Elbow_Joint": 10.0, "L_Forearm_Joint": 10.0, "L_Wrist1_Joint": 3.0, "L_Wrist2_Joint": 3.0,
+
+
 
             "Neck_Joint": 100.0, "Head_Joint": 100.0,            
 
+
+
             "R_Shoulder1_Joint": 10.0, "R_Shoulder2_Joint": 28.0, "R_Shoulder3_Joint": 10.0, "R_Armlink_Joint": 10.0,
+
             "R_Elbow_Joint": 10.0, "R_Forearm_Joint": 10.0, "R_Wrist1_Joint": 3.0, "R_Wrist2_Joint": 3.0}     # [N*m*s/rad]
+
         # action scale: target angle = actionScale * action + defaultAngle
+
         action_scale = 100
+
         # decimation: Number of control action updates @ sim DT per policy DT
+
         decimation = 2 # TODO this was 6
 
+
+
     class terrain( LeggedRobotCfg.terrain ):
+
         mesh_type = 'plane'
+
         measure_heights = False
 
+
+
     class asset( LeggedRobotCfg.asset ):
+
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/urdf/tocabi.urdf' 
+
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
+
         asset_is_mjcf = True
-
-
         name = "tocabi"
         foot_name = "Foot_Link"
         # foot_name = "AnkleRoll_Link"
         penalize_contacts_on = []
         # penalize_contacts_on = ['bolt_lower_leg_right_side', 'bolt_body', 'bolt_hip_fe_left_side', 'bolt_hip_fe_right_side', ' bolt_lower_leg_left_side', 'bolt_shoulder_fe_left_side', 'bolt_shoulder_fe_right_side', 'bolt_trunk', 'bolt_upper_leg_left_side', 'bolt_upper_leg_right_side']
-        terminate_after_contacts_on = ['base', 'Knee', 'Thigh', 'Head', 'Wrist']
-        termination_height = [0.8, 1.0]
+        terminate_after_contacts_on = ['base', 'Knee', 'Thigh']
+        termination_height = (0.6, 1.0)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         disable_gravity = False
         collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
-        fix_base_link = False# fixe the base of the robot
+        fix_base_link = False # fixe the base of the robot
         default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         replace_cylinder_with_capsule = True # replace collision cylinders with capsules, leads to faster/more stable simulation
         flip_visual_attachments = False # Some .obj meshes must be flipped from y-up to z-up
+        # fix_base_link = True
           
     class domain_rand:
         randomize_friction = False
@@ -179,12 +263,11 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
-        base_height_target = 0.9
-        # tracking_sigma = 4. # tracking reward = exp(-error^2/sigma)
+        base_height_target = 0.25
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
-            tracking_lin_vel = 1. # 1.5 * 1. / (.005 * 6) 
-            tracking_ang_vel = 0.5 #0.5 * 1. / (.005 * 6)
+            tracking_lin_vel = 1.0
+            tracking_ang_vel = 0.5
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
@@ -221,47 +304,69 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             ang_vel_yaw = [-0., 0.]    # min max [rad/s]
             heading = [-0., 0.]
 
+
+
     class sim:
+
         dt =  0.002
+
         substeps = 1
+
         gravity = [0., 0. ,-9.81]  # [m/s^2]
+
         up_axis = 1  # 0 is y, 1 is z
 
-        class physx:
-            num_threads = 10
-            solver_type = 1  # 0: pgs, 1: tgs
-            num_position_iterations = 4
-            num_velocity_iterations = 0
-            contact_offset = 0.01  # [m]
-            rest_offset = 0.0   # [m]
-            bounce_threshold_velocity = 0.5 #0.5 [m/s]
-            max_depenetration_velocity = 1.0
-            max_gpu_contact_pairs = 2**23 #2**24 -> needed for 8000 envs and more
-            default_buffer_size_multiplier = 5
-            contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
+
+        class physx:
+
+            num_threads = 10
+
+            solver_type = 1  # 0: pgs, 1: tgs
+
+            num_position_iterations = 4
+
+            num_velocity_iterations = 0
+
+            contact_offset = 0.01  # [m]
+
+            rest_offset = 0.0   # [m]
+
+            bounce_threshold_velocity = 0.5 #0.5 [m/s]
+
+            max_depenetration_velocity = 1.0
+
+            max_gpu_contact_pairs = 2**23 #2**24 -> needed for 8000 envs and more
+
+            default_buffer_size_multiplier = 5
+
+            contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
 class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'
+    seed = 1
     class algorithm( LeggedRobotCfgPPO.algorithm ):
+        value_loss_coef = .5
         entropy_coef = 0.01
-        amp_replay_buffer_size = 100000 #1000000
+        amp_replay_buffer_size = 100000
         num_learning_epochs = 5
         num_mini_batches = 4
+        disc_coef = 5
+        learning_rate = 2.e-5
 
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
         experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
         algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
-        max_iterations = 500000 # number of policy updates
+        max_iterations = 7000 # number of policy updates
 
-        amp_reward_coef = 1.0
+        amp_reward_coef = 2.0
         amp_motion_files = MOTION_FILES
         amp_num_preload_transitions = 2000000
-        amp_task_reward_lerp = .5 # 0.3 task weight
-        amp_discr_hidden_dims = [512, 256, 128]
+        amp_task_reward_lerp = 0.5
+        amp_discr_hidden_dims = [1024, 512]
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4
-        LOG_WANDB = False
-        wgan = True
+        LOG_WANDB = True
+        wgan = False
