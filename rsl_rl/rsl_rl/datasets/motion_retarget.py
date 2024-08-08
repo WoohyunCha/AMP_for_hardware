@@ -301,7 +301,11 @@ class MotionRetarget():
                 joint_quat_local_retarget[:, 4*(self.JOINT_MAPPING[joint_name]-7):4*(self.JOINT_MAPPING[joint_name]-6)] = target_local_joint_quat[joint_name]
 
         # # 4. Solve numerical IK from joint positions, foot positions and orientation
-        weight_joint_pos, weight_foot_quat, weight_joint_pose = 1., .1, .1
+        weight_joint_pos, weight_foot_quat, weight_joint_pose = 1., 1., .1
+        weight_norm = (weight_joint_pos+weight_foot_quat+weight_joint_pose)
+        weight_joint_pos /= weight_norm
+        weight_foot_quat /= weight_norm
+        weight_joint_pose/= weight_norm
 
         def cost_function(x):
             # x = [q for each joints] -> shape of 12
@@ -310,7 +314,7 @@ class MotionRetarget():
             # joint_pos_local_retarget = [joint_pos] in base local frame coordinates
             temp = torch.zeros((x.shape[0], 7), requires_grad=False, device='cuda:0')
             temp[:, -1] = 1.
-            _, _, x_local_joint_pos, x_local_joint_quat = forward_kinematics(self.target, torch.cat((temp, x), dim=-1), self.JOINT_MAPPING)
+            _, x_global_joint_quat, x_local_joint_pos, x_local_joint_quat = forward_kinematics(self.target, torch.cat((temp, x), dim=-1), self.JOINT_MAPPING)
             x_local_joint_pos_tensor = torch.zeros_like(joint_pos_local_retarget)
             x_local_joint_quat_tensor = torch.zeros_like(joint_quat_local_retarget)
             for joint_name, joint_index in self.JOINT_MAPPING.items():
@@ -330,38 +334,42 @@ class MotionRetarget():
             R_ankle_pitch_joint = FOOT_JOINTS[1]
             L_ankle_roll_joint = FOOT_JOINTS[2]
             R_ankle_roll_joint = FOOT_JOINTS[3]
-            x_Lfoot_joint_quat = x_local_joint_quat[L_ankle_pitch_joint] # Ankle pitch joint quat
-            x_Rfoot_joint_quat = x_local_joint_quat[R_ankle_pitch_joint] # Ankle pitch joint quat
+            x_Lfoot_joint_quat = x_global_joint_quat[L_ankle_pitch_joint] # Ankle pitch joint quat
+            x_Rfoot_joint_quat = x_global_joint_quat[R_ankle_pitch_joint] # Ankle pitch joint quat
             L_ankle_pitch_quat = quat_from_angle_axis(x[:, self.JOINT_MAPPING[L_ankle_pitch_joint]-7] ,to_torch(target_joints[L_ankle_pitch_joint]['axis']))
             R_ankle_pitch_quat = quat_from_angle_axis(x[:, self.JOINT_MAPPING[R_ankle_pitch_joint]-7] ,to_torch(target_joints[R_ankle_pitch_joint]['axis']))
             L_ankle_roll_quat = quat_from_angle_axis(x[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7] ,to_torch(target_joints[L_ankle_roll_joint]['axis']))
             R_ankle_roll_quat = quat_from_angle_axis(x[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7] ,to_torch(target_joints[R_ankle_roll_joint]['axis']))
 
-            x_Lfoot_quat = quat_mul(x_Lfoot_joint_quat, quat_mul(L_ankle_pitch_quat, L_ankle_roll_quat))
-            x_Rfoot_quat = quat_mul(x_Rfoot_joint_quat, quat_mul(R_ankle_pitch_quat, R_ankle_roll_quat))
-            # L_foot_quat_distance = quat_mul(foot_quat_local_target_inverse, x_Lfoot_quat)
-            # R_foot_quat_distance = quat_mul(foot_quat_local_target_inverse, x_Rfoot_quat)
-            # foot_quat_cost = (angle_from_quat(L_foot_quat_distance).pow(2) + angle_from_quat(R_foot_quat_distance).pow(2)).mean()
-            foot_quat_cost = (distance_between_quats(quat_conjugate(foot_quat_local_target_inverse), x_Lfoot_quat, neglect_axis=2).pow(2) \
-                              + distance_between_quats(quat_conjugate(foot_quat_local_target_inverse), x_Rfoot_quat, neglect_axis=2).pow(2)).mean()
+            x_Lfoot_quat = x_global_joint_quat[FOOT_JOINTS[1]]
+            x_Rfoot_quat = x_global_joint_quat[FOOT_JOINTS[3]]
+            # print("global frame in base coordinates : ", quat_conjugate(foot_quat_local_target_inverse))
+            # print("Lfoot quat : ", x_Lfoot_quat)
+            # print("Lfoot quat distance : ", distance_between_quats(quat_conjugate(foot_quat_local_target_inverse), x_Lfoot_quat, neglect_axis=2))
+            # print("Rfoot quat : ", x_Rfoot_quat)
+            # print("Rfoot quat distance : ", distance_between_quats(quat_conjugate(foot_quat_local_target_inverse), x_Rfoot_quat, neglect_axis=2))
+            zero_quat = torch.tensor([0, 0, 0, 1], dtype=torch.float, device='cuda:0', requires_grad=False).tile(reference_length,1)
+            foot_quat_cost = (distance_between_quats(zero_quat, x_Lfoot_quat, neglect_axis=2).pow(2) \
+                              + distance_between_quats(zero_quat, x_Rfoot_quat, neglect_axis=2).pow(2)).mean()
             # print("joint pos cost mean : ", joint_pos_cost.mean())
             # print("joint pose cost mean : ", joint_pose_cost.mean())
             # print("foot quat cost mean : ", foot_quat_cost.mean())
             total_cost = weight_joint_pos*joint_pos_cost + weight_joint_pose*joint_pose_cost + weight_foot_quat*foot_quat_cost
             return torch.sum(total_cost)
         
-        n_iterations = 1000
+        n_iterations = 3000
         q_opt = torch.zeros((reference_length, 12), dtype=torch.float32, requires_grad=True, device='cuda:0')
         
         q_opt = reference[:, JOINT_POSE_START_IDX:JOINT_POSE_END_IDX].clone().detach().requires_grad_(True)
-        optimizer = optim.Adam([q_opt], lr=1e-3)
+        optimizer = optim.Adam([q_opt], lr=1e-4)
         print("SOLVING IK....")
         for i in range(n_iterations):
             optimizer.zero_grad()
             cost = cost_function(q_opt)
             cost.backward()
             optimizer.step()
-            # print(f"Iteration {i}, Cost: {cost.item()}")
+            if i%100 == 0:
+                print(f"Iteration {i}, Cost: {cost.item()}")
 
             # Optionally, you can add some stopping criterion based on the change in cost or other conditions
             if cost.item() < 1e-4:
@@ -369,8 +377,6 @@ class MotionRetarget():
                 break
         assert ~torch.any(~torch.isfinite(q_opt)), "Cannot solve IK!"
         print("IK SOLVED!")
-        print(f"Optimized x: {q_opt}")
-        print(f"Original q : {reference[:, JOINT_POSE_START_IDX:JOINT_POSE_END_IDX]}")
 
         temp = torch.zeros((q_opt.shape[0], 7), requires_grad=False, device='cuda:0')
         temp[:, :3] = to_torch(target_bodies['base_link']['info']['position'], device='cuda:0').tile((q_opt.shape[0], 1))
@@ -380,6 +386,37 @@ class MotionRetarget():
         for joint_name, _ in self.JOINT_MAPPING.items():
             target_reference[:, 3*(self.JOINT_MAPPING[joint_name]-6):3*(self.JOINT_MAPPING[joint_name]-5)] = retarget_global_joint_pos[joint_name]
         target_reference[:, 0:3] = retarget_global_joint_pos['virtual_joint'][:, 0:3]
+
+        # Check for foot quats
+        L_ankle_roll_joint = FOOT_JOINTS[1]
+        R_ankle_roll_joint = FOOT_JOINTS[3]
+        L_AnkleRoll_angle = q_opt[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7]
+        R_AnkleRoll_angle = q_opt[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7]
+        L_roll_quat = quat_from_angle_axis(L_AnkleRoll_angle ,to_torch(target_joints[L_ankle_roll_joint]['axis']))
+        R_roll_quat = quat_from_angle_axis(R_AnkleRoll_angle ,to_torch(target_joints[R_ankle_roll_joint]['axis']))
+
+        L_foot_euler = get_euler_xyz(retarget_global_joint_quat[L_ankle_roll_joint])
+        R_foot_euler = get_euler_xyz(retarget_global_joint_quat[L_ankle_roll_joint])
+        L_foot_euler = (normalize_angle(L_foot_euler[0]), normalize_angle(L_foot_euler[1]), normalize_angle(L_foot_euler[2]))
+        R_foot_euler = (normalize_angle(R_foot_euler[0]), normalize_angle(R_foot_euler[1]), normalize_angle(R_foot_euler[2]))
+        print("retarget L foot euler : ", L_foot_euler)
+        print("retarget R foot euler : ", R_foot_euler)
+
+
+        L_ankle_roll_joint = FOOT_JOINTS[1]
+        R_ankle_roll_joint = FOOT_JOINTS[3]
+        L_AnkleRoll_angle = source_qpos[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7]
+        R_AnkleRoll_angle = source_qpos[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7]
+        L_roll_quat = quat_from_angle_axis(L_AnkleRoll_angle ,to_torch(source_joints[L_ankle_roll_joint]['axis']))
+        R_roll_quat = quat_from_angle_axis(R_AnkleRoll_angle ,to_torch(source_joints[R_ankle_roll_joint]['axis']))
+
+        L_foot_euler = get_euler_xyz(source_global_joint_quat[L_ankle_roll_joint])
+        R_foot_euler = get_euler_xyz(source_global_joint_quat[R_ankle_roll_joint])
+        L_foot_euler = (normalize_angle(L_foot_euler[0]), normalize_angle(L_foot_euler[1]), normalize_angle(L_foot_euler[2]))
+        R_foot_euler = (normalize_angle(R_foot_euler[0]), normalize_angle(R_foot_euler[1]), normalize_angle(R_foot_euler[2]))
+        print("source L foot euler : ", L_foot_euler)
+        print("source R foot euler : ", R_foot_euler)
+
         return target_reference.detach()
         # Optimize cost_function about x
 

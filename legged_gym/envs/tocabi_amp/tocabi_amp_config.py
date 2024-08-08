@@ -31,8 +31,8 @@ import glob
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-# MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/*.json')
-MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_data_scaled_1_0x.json')
+MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/*.json')
+# MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_data_scaled_1_0x.json')
 
 
 class TOCABIAMPCfg( LeggedRobotCfg ):
@@ -198,7 +198,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
         # action scale: target angle = actionScale * action + defaultAngle
 
-        action_scale = 100
+        action_scale = 100.
 
         # decimation: Number of control action updates @ sim DT per policy DT
 
@@ -226,8 +226,8 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         # foot_name = "AnkleRoll_Link"
         penalize_contacts_on = []
         # penalize_contacts_on = ['bolt_lower_leg_right_side', 'bolt_body', 'bolt_hip_fe_left_side', 'bolt_hip_fe_right_side', ' bolt_lower_leg_left_side', 'bolt_shoulder_fe_left_side', 'bolt_shoulder_fe_right_side', 'bolt_trunk', 'bolt_upper_leg_left_side', 'bolt_upper_leg_right_side']
-        terminate_after_contacts_on = ['base', 'Knee', 'Thigh']
-        termination_height = (0.6, 1.0)
+        terminate_after_contacts_on = ['base', 'Knee', 'Thigh', 'Head', 'Wrist']
+        termination_height = (0.7, 1.0)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         disable_gravity = False
         collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
@@ -264,10 +264,11 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.25
+        tracking_sigma = 0.2
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
+            tracking_lin_vel = 50
+            tracking_ang_vel = 25
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
@@ -291,6 +292,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             height_measurements = 5.0
         clip_observations = 100.
         clip_actions = 100.
+        normalize_observation = True
 
     class commands:
         curriculum = False
@@ -352,6 +354,8 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         num_learning_epochs = 5
         num_mini_batches = 4
         disc_coef = 5
+        bounds_loss_coef = 10
+        disc_grad_pen = 2
         learning_rate = 2.e-5
 
     class runner( LeggedRobotCfgPPO.runner ):
@@ -359,13 +363,13 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
         algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
-        max_iterations = 7000 # number of policy updates
+        max_iterations = 3000 # number of policy updates
 
         amp_reward_coef = 2.0
         amp_motion_files = MOTION_FILES
         amp_num_preload_transitions = 2000000
         amp_task_reward_lerp = 0.5
-        amp_discr_hidden_dims = [1024, 512]
+        amp_discr_hidden_dims = [512,512]
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4
         LOG_WANDB = True

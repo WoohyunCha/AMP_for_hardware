@@ -141,6 +141,8 @@ class AMPOnPolicyRunner:
             self.writer = SummaryWriter(log_dir=self.log_dir, flush_secs=10)
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf, high=int(self.env.max_episode_length))
+        if self.env.normalizer_obs is not None:
+            self.env.normalizer_obs.train()
         obs = self.env.get_observations()
         privileged_obs = self.env.get_privileged_observations()
         amp_obs = self.env.get_amp_observations()
@@ -310,12 +312,24 @@ class AMPOnPolicyRunner:
             'iter': self.current_learning_iteration,
             'infos': infos,
             }, path)
+        if self.env.normalizer_obs is not None:
+            torch.save({
+            'model_state_dict': self.alg.actor_critic.state_dict(),
+            'optimizer_state_dict': self.alg.optimizer.state_dict(),
+            'discriminator_state_dict': self.alg.discriminator.state_dict(),
+            'amp_normalizer': self.alg.amp_normalizer,
+            'obs_normalizer_state_dict': self.env.normalizer_obs.state_dict(),
+            'iter': self.current_learning_iteration,
+            'infos': infos,
+            }, path)
 
     def load(self, path, load_optimizer=True):
         loaded_dict = torch.load(path)
         self.alg.actor_critic.load_state_dict(loaded_dict['model_state_dict'])
         self.alg.discriminator.load_state_dict(loaded_dict['discriminator_state_dict'])
         self.alg.amp_normalizer = loaded_dict['amp_normalizer']
+        if self.env.normalizer_obs is not None:
+            self.env.normalizer_obs.load_state_dict(loaded_dict['obs_normalizer_state_dict'])
         if load_optimizer:
             self.alg.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
         self.current_learning_iteration = loaded_dict['iter']
@@ -326,6 +340,12 @@ class AMPOnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_inference
+    
+    def get_inference_normalizer(self, device=None):
+        self.env.normalizer_obs.eval() # switch to evaluation mode (dropout for example)
+        if device is not None:
+            self.env.normalizer_obs.to(device)
+        return self.env.normalizer_obs
 
     def log_wandb(self, d, locs):
         if self.LOG_WANDB:

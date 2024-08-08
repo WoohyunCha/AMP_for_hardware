@@ -33,7 +33,7 @@ import os
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import  get_args, export_policy_as_jit, task_registry, Logger
+from legged_gym.utils import get_args, export_policy_as_jit, export_models_as_jit, task_registry, Logger
 
 import numpy as np
 import torch
@@ -61,19 +61,27 @@ def play(args):
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
-    _, _ = env.reset()
-    obs = env.get_observations()
     # load policy
     train_cfg.runner.resume = True
     train_cfg.runner.LOG_WANDB = False
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     policy = ppo_runner.get_inference_policy(device=env.device)
-    
+    ppo_runner.env.set_normalizer_eval()    
+    _, _ = env.reset()
+    obs = env.get_observations()
+
     # export policy as a jit module (used to run it from C++)
     if EXPORT_POLICY:
         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
+
+        models_path = path # TODO change save directory
+        models = {'actor_critic': ppo_runner.alg.actor_critic}
+        if hasattr(env, 'normalizer_obs'):
+            models['normalizer'] = env.normalizer_obs
+        # export_models_as_jit(models=models, path=models_path)
+        # print('Exported models as jit script to: ', models_path)
 
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
@@ -85,8 +93,11 @@ def play(args):
     camera_vel = np.array([1., 1., 0.])
     camera_direction = np.array(env_cfg.viewer.lookat) - np.array(env_cfg.viewer.pos)
     img_idx = 0
-
     for i in range(10*int(env.max_episode_length)):
+        # print(obs)
+        # if normalizer is not None:
+        #     obs = normalizer(obs)
+        #     print("after normalize : ", obs)
         actions = policy(obs.detach())
         obs, _, rews, dones, infos, _, _ = env.step(actions.detach())
         if RECORD_FRAMES:

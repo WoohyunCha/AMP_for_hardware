@@ -48,12 +48,16 @@ from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
 from rsl_rl.datasets.motion_loader import AMPLoader
+from rsl_rl.utils.utils import Normalizer_obs
 
 class TOCABIAMP(LeggedRobot):
 
     def _custom_init(self, cfg):
         self.termination_height = cfg.asset.termination_height
         self.reference_state_initialization_prob = cfg.env.reference_state_initialization_prob
+        self.normalizer_obs = None
+        if cfg.normalization.normalize_observation:
+            self.normalizer_obs = Normalizer_obs(self.num_privileged_obs)
 
     def reset(self):
         """ Reset all robots"""
@@ -72,7 +76,10 @@ class TOCABIAMP(LeggedRobot):
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
         clip_actions = self.cfg.normalization.clip_actions
+        if self.normalizer_obs is not None:
+            clip_actions = 1.
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
+
         # step physics and render each frame
         self.render()
         for _ in range(self.cfg.control.decimation):
@@ -87,6 +94,8 @@ class TOCABIAMP(LeggedRobot):
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.cfg.normalization.clip_observations
         self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
+
+
         if self.cfg.env.include_history_steps is not None:
             self.obs_buf_history.reset(reset_env_ids, self.obs_buf[reset_env_ids])
             self.obs_buf_history.insert(self.obs_buf)
@@ -171,7 +180,7 @@ class TOCABIAMP(LeggedRobot):
             self.update_command_curriculum(env_ids)
         
         # reset robot states
-        if self.cfg.env.reference_state_initialization and np.random.uniform() < self.reference_state_initialization_prob:
+        if self.cfg.env.reference_state_initialization:
             frames = self.amp_loader.get_full_frame_batch(len(env_ids))
             self._reset_dofs_amp(env_ids, frames)
             self._reset_root_states_amp(env_ids, frames)
@@ -237,6 +246,7 @@ class TOCABIAMP(LeggedRobot):
                                     self.dof_vel[:, :self.num_actions] * self.obs_scales.dof_vel,
                                     self.actions
                                     ),dim=-1)
+        
         # add perceptive inputs if not blind
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
@@ -247,10 +257,18 @@ class TOCABIAMP(LeggedRobot):
             self.privileged_obs_buf += (2 * torch.rand_like(self.privileged_obs_buf) - 1) * self.noise_scale_vec
 
         # Remove velocity observations from policy observation. 
+        # Batch norm for observations
+        # print("Before normalize : ", self.obs_buf[0])
+        if self.normalizer_obs is not None:
+            with torch.no_grad():
+                self.privileged_obs_buf = self.normalizer_obs(self.privileged_obs_buf)
+        # print("After normalize : ", self.obs_buf[0])
+
         if self.num_obs == self.num_privileged_obs - 6:
             self.obs_buf = self.privileged_obs_buf[:, 6:] #change
         else:
             self.obs_buf = torch.clone(self.privileged_obs_buf)
+
 
     def get_amp_observations(self):
         base_height = self.root_states[:, 2].unsqueeze(-1)
@@ -451,6 +469,8 @@ class TOCABIAMP(LeggedRobot):
         """
         #pd controller
         actions_scaled = actions * self.cfg.control.action_scale
+        if self.normalizer_obs is not None:
+            actions_scaled = actions
         control_type = self.cfg.control.control_type
 
         if self.cfg.domain_rand.randomize_gains:
@@ -468,7 +488,12 @@ class TOCABIAMP(LeggedRobot):
         elif control_type=="V":
             torques = p_gains*(actions_scaled - self.dof_vel) - d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
         elif control_type=="T":
+            # print("Actions : ", actions_scaled[0])
+            # torques = actions_scaled * self.torque_limits[:self.num_actions].unsqueeze(0)
+            # print("torques : ", torques[0])
             torques = actions_scaled
+            if self.normalizer_obs is not None:
+                torques = actions_scaled * self.torque_limits[:self.num_actions].unsqueeze(0)
             # upper body
             p_gains = p_gains.unsqueeze(0)
             d_gains = d_gains.unsqueeze(0)
@@ -1035,4 +1060,9 @@ class TOCABIAMP(LeggedRobot):
         heights = torch.min(heights, heights3)
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
+    
+    def set_normalizer_eval(self):
+        if self.normalizer_obs is not None:
+            print("Set normalizer to eval mode")
+            self.normalizer_obs.eval()
     #------------ reward functions----------------

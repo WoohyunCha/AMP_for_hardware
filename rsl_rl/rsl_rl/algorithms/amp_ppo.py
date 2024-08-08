@@ -44,6 +44,7 @@ class AMPPPO:
                  discriminator,
                  amp_data,
                  amp_normalizer,
+                 disc_grad_pen,
                  num_learning_epochs=1,
                  num_mini_batches=1,
                  clip_param=0.2,
@@ -59,7 +60,8 @@ class AMPPPO:
                  device='cpu',
                  amp_replay_buffer_size=100000,
                  min_std=None,
-                 disc_coef=5.
+                 disc_coef=5.,
+                 bounds_loss_coef=10.,
                  ):
 
         self.device = device
@@ -100,6 +102,8 @@ class AMPPPO:
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
         self.disc_coef = disc_coef
+        self.disc_grad_pen = disc_grad_pen
+        self.bounds_loss_coef = bounds_loss_coef
         self.gamma = gamma
         self.lam = lam
         self.max_grad_norm = max_grad_norm
@@ -218,7 +222,14 @@ class AMPPPO:
                     value_loss = torch.max(value_losses, value_losses_clipped).mean()
                 else:
                     value_loss = (returns_batch - value_batch).pow(2).mean()
-
+                
+                # bound loss
+                soft_bound = 1.0
+                mu_loss_high = torch.maximum(mu_batch - soft_bound,
+                                             torch.tensor(0, device=self.device)) ** 2 
+                mu_loss_low = torch.minimum(mu_batch + soft_bound, torch.tensor(0, device=self.device)) ** 2
+                b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+                
                 # Discriminator loss.
                 policy_state, policy_next_state = sample_amp_policy
                 expert_state, expert_next_state = sample_amp_expert
@@ -241,7 +252,7 @@ class AMPPPO:
                     ).mean()
                     amp_loss = (expert_loss + policy_loss) *0.5
                     grad_pen_loss = self.discriminator.compute_grad_pen(
-                        *sample_amp_expert, *sample_amp_policy,  lambda_=10)
+                        *sample_amp_expert, *sample_amp_policy,  lambda_=self.disc_grad_pen)
                 else: 
                     # LSGAN
                     expert_loss = torch.nn.MSELoss()(
@@ -249,15 +260,16 @@ class AMPPPO:
                     policy_loss = torch.nn.MSELoss()(
                         policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
                     amp_loss = (expert_loss + policy_loss) *0.5
-                    grad_pen_loss = self.discriminator.compute_grad_pen( # already scaled with lambda
-                        *sample_amp_expert, lambda_=10) 
+                    grad_pen_loss = self.discriminator.compute_grad_pen( 
+                        *sample_amp_expert, lambda_=self.disc_grad_pen) 
                 
 
 
                 # Compute total loss.
                 loss = (
                     surrogate_loss +
-                    self.value_loss_coef * value_loss -
+                    self.value_loss_coef * value_loss +
+                    self.bounds_loss_coef * b_loss.mean() -
                     self.entropy_coef * entropy_batch.mean() +
                     self.disc_coef*(amp_loss + grad_pen_loss)
                     )
@@ -292,3 +304,13 @@ class AMPPPO:
         self.storage.clear()
 
         return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred
+    
+    def bound_loss(self, mu):
+        if self.bounds_loss_coef is not None:
+            soft_bound = 1.0
+            mu_loss_high = torch.maximum(mu - soft_bound, torch.tensor(0, device=self.ppo_device))**2
+            mu_loss_low = torch.minimum(mu + soft_bound, torch.tensor(0, device=self.ppo_device))**2
+            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+        else:
+            b_loss = 0
+        return b_loss
