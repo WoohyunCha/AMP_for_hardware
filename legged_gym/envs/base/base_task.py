@@ -65,6 +65,7 @@ class BaseTask():
         self.num_privileged_obs = cfg.env.num_privileged_obs
         self.num_actions = cfg.env.num_actions
         self.include_history_steps = cfg.env.include_history_steps
+        self.skips = cfg.env.skips
 
         # optimization flags for pytorch JIT
         torch._C._jit_set_profiling_mode(False)
@@ -74,7 +75,7 @@ class BaseTask():
         if cfg.env.include_history_steps is not None:
             self.obs_buf_history = observation_buffer.ObservationBuffer(
                 self.num_envs, self.num_obs,
-                self.include_history_steps, self.device)
+                self.include_history_steps, self.skips, self.device)
         self.obs_buf = torch.zeros(self.num_envs, self.num_obs, device=self.device, dtype=torch.float)
         self.rew_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.float)
         self.reset_buf = torch.ones(self.num_envs, device=self.device, dtype=torch.long)

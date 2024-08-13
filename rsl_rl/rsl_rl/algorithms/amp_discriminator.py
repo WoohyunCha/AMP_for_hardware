@@ -162,8 +162,9 @@ class AMPCritic(AMPDiscriminator):
 
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
             reward = self.amp_reward_coef * torch.exp(d)
+            amp_reward = reward
             if self.task_reward_lerp > 0:
                 reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
             self.train()
-        return reward.squeeze(dim=-1), d 
+        return reward.squeeze(dim=-1), amp_reward.squeeze(dim=-1), d 
     

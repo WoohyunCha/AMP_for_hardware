@@ -40,7 +40,7 @@ import torch
 from rsl_rl.algorithms import AMPPPO, PPO
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
 from rsl_rl.env import VecEnv
-from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator
+from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator, AMPCritic
 from rsl_rl.datasets.motion_loader import AMPLoader
 from rsl_rl.utils.utils import Normalizer
 from legged_gym.utils.helpers import class_to_dict
@@ -85,11 +85,20 @@ class AMPOnPolicyRunner:
             motion_files=self.cfg["amp_motion_files"])
         print("AMP data observation data size : ", amp_data.observation_dim)
         amp_normalizer = Normalizer(amp_data.observation_dim) # batchnorm. Updates its running averages (mean, std) of observations from batches of observations, and normalizes observations using them
-        discriminator = AMPDiscriminator( # Discriminator computes the reward and gradient penalty loss.
-            amp_data.observation_dim * 2,
-            train_cfg['runner']['amp_reward_coef'],
-            train_cfg['runner']['amp_discr_hidden_dims'], device,
-            train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
+        if self.cfg['wgan']:
+            print("WGAN is used!!!")
+            discriminator = AMPCritic(
+                amp_data.observation_dim * 2,
+                train_cfg['runner']['amp_reward_coef'],
+                train_cfg['runner']['amp_discr_hidden_dims'], device,
+                train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
+        else:
+            print("LSGAN is used!!!")
+            discriminator = AMPDiscriminator( # Discriminator computes the reward and gradient penalty loss.
+                amp_data.observation_dim * 2,
+                train_cfg['runner']['amp_reward_coef'],
+                train_cfg['runner']['amp_discr_hidden_dims'], device,
+                train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
 
         # self.discr: AMPDiscriminator = AMPDiscriminator()
         alg_class = eval(self.cfg["algorithm_class_name"]) # PPO

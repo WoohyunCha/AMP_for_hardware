@@ -198,7 +198,7 @@ class AMPPPO:
                         kl_mean = torch.mean(kl)
 
                         if kl_mean > self.desired_kl * 2.0:
-                            self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                            self.learning_rate = max(1e-6, self.learning_rate / 1.5)
                         elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
                             self.learning_rate = min(1e-2, self.learning_rate * 1.5)
 
@@ -243,7 +243,7 @@ class AMPPPO:
                 expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
                 if isinstance(self.discriminator, AMPCritic):
                     # WGAN
-                    boundary = 0.3 # 0.1 ~ 0.5 is the proper range of selection
+                    boundary = 0.5 # 0.1 ~ 0.5 is the proper range of selection
                     expert_loss = -torch.nn.Tanh()(
                         boundary*expert_d
                     ).mean()
@@ -252,7 +252,7 @@ class AMPPPO:
                     ).mean()
                     amp_loss = (expert_loss + policy_loss) *0.5
                     grad_pen_loss = self.discriminator.compute_grad_pen(
-                        *sample_amp_expert, *sample_amp_policy,  lambda_=self.disc_grad_pen)
+                        *sample_amp_expert, lambda_=self.disc_grad_pen)
                 else: 
                     # LSGAN
                     expert_loss = torch.nn.MSELoss()(

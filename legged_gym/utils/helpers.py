@@ -191,32 +191,20 @@ def export_policy_as_jit(actor_critic, path):
         traced_script_module = torch.jit.script(model)
         traced_script_module.save(path)
 
-def export_models_as_jit(models : dict, path):
+def export_critic_as_jit(actor_critic, path):
+    os.makedirs(path, exist_ok=True)
+    path = os.path.join(path, 'critic_1.pt')
+    model = copy.deepcopy(actor_critic.actor).to('cpu')
+    traced_script_module = torch.jit.script(model)
+    traced_script_module.save(path)
 
-    models_to_save = {}
-    actor_critic = models['actor_critic']
-    if hasattr(actor_critic, 'memory_a'):
-        # Let's assume 'memory_a' is an LSTM module
-        exporter = PolicyExporterLSTM(actor_critic)
-        exporter.export(path)
-    else:
-    # Export the main actor_critic model
-        os.makedirs(path, exist_ok=True)
-        save_path = os.path.join(path, 'full_model.pt')
-        actor_model = copy.deepcopy(actor_critic.actor).to('cpu')
-        actor_script_module = torch.jit.script(actor_model)
-        models_to_save['actor'] = actor_script_module
-    
-    if hasattr(actor_critic, 'critic'):
-        critic_model = copy.deepcopy(actor_critic.critic).to('cpu')
-        critic_script_module = torch.jit.script(critic_model)
-        models_to_save['critic'] = critic_script_module
-    if models['normalizer'] is not None:
-        normalizer = models['normalizer']
-        normalizer_model = copy.deepcopy(normalizer).to('cpu')
-        normalizer_script_module = torch.jit.script(normalizer_model)
-        models_to_save['normalizer'] = normalizer_script_module
-    torch.save(actor_script_module, save_path)
+def export_normalizer_as_jit(normalizer: torch.nn.Module, path):
+    os.makedirs(path, exist_ok=True)
+    path = os.path.join(path, 'normalizer_1.pt')
+    model = copy.deepcopy(normalizer).to('cpu')
+    traced_script_module = torch.jit.script(model)
+    traced_script_module.save(path)
+
 
 
 class PolicyExporterLSTM(torch.nn.Module):

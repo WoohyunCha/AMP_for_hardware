@@ -33,7 +33,7 @@ import os
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import get_args, export_policy_as_jit, export_models_as_jit, task_registry, Logger
+from legged_gym.utils import get_args, export_policy_as_jit, export_critic_as_jit, export_normalizer_as_jit, task_registry, Logger
 
 import numpy as np
 import torch
@@ -42,7 +42,7 @@ import torch
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 1)
+    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 2)
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 5
     env_cfg.terrain.curriculum = False
@@ -57,7 +57,7 @@ def play(args):
         env_cfg.commands.ranges.lin_vel_x = [args.speed, args.speed]
         env_cfg.commands.ranges.lin_vel_y = [0., 0.]
         env_cfg.commands.ranges.heading = [0.,0.]
-    train_cfg.runner.amp_num_preload_transitions = 1
+    train_cfg.runner.amp_num_preload_transitions = 100
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
@@ -74,14 +74,12 @@ def play(args):
     if EXPORT_POLICY:
         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
+        export_critic_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
-
-        models_path = path # TODO change save directory
-        models = {'actor_critic': ppo_runner.alg.actor_critic}
-        if hasattr(env, 'normalizer_obs'):
-            models['normalizer'] = env.normalizer_obs
-        # export_models_as_jit(models=models, path=models_path)
-        # print('Exported models as jit script to: ', models_path)
+        if ppo_runner.env.normalizer_obs is not None:
+            export_normalizer_as_jit(ppo_runner.env.normalizer_obs, path)
+            print('Exported normalizer as jit script to: ', path)
+            
 
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging

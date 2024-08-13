@@ -31,7 +31,8 @@ import glob
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/*.json')
+MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/*.json')
+# MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/*.json')
 # MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_data_scaled_1_0x.json')
 
 
@@ -39,11 +40,12 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
     class env( LeggedRobotCfg.env ):
         num_envs = 4096
-        include_history_steps = None  # Number of steps of history to include.
+        include_history_steps = 10  # Number of steps of history to include.
+        skips = 2 # Number of steps to skip between steps in history
         num_observations = 48 # change 42
         num_privileged_obs = 48
         reference_state_initialization = True
-        reference_state_initialization_prob = 1. #0.85
+        reference_state_initialization_prob = 1.
         amp_motion_files = MOTION_FILES
         episode_length_s = 20 # episode length in seconds
         num_actions = 12
@@ -240,31 +242,37 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
           
     class domain_rand:
         randomize_friction = False
-        friction_range = [0.25, 1.75]
+        friction_range = [0.8, 1.2]
         randomize_base_mass = False
-        added_mass_range = [-1., 1.]
+        added_mass_range = [-5., 5.]
         push_robots = False
         push_interval_s = 15
-        max_push_vel_xy = 1.0
+        max_push_vel_xy = 0.3
         randomize_gains = False
         stiffness_multiplier_range = [0.9, 1.1]
         damping_multiplier_range = [0.9, 1.1]
+        randomize_torque = False
+        torque_constant = [0.98, 1.02]
+        randomize_joints = False
+        damping_range = [0., 2.]
+        armature_range = [0.8, 1.2]
 
     class noise:
-        add_noise = False
-        noise_level = 1.0 # scales other values
+        add_noise = True
+        noise_level = .0002
+        noise_dist = 'uniform' # gaussian
         class noise_scales:
-            dof_pos = 0.03
-            dof_vel = 1.5
-            lin_vel = 0.1
-            ang_vel = 0.3
-            gravity = 0.05
-            height_measurements = 0.1
+            dof_pos = 1
+            dof_vel = 250
+            lin_vel = 100
+            ang_vel = 100
+            gravity = 1
+            height_measurements = 10
 
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.25
-        tracking_sigma = 0.2
+        # tracking_sigma = 0.2
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
             tracking_lin_vel = 50
@@ -301,7 +309,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
         class ranges:
-            lin_vel_x = [0., 1.0] # min max [m/s]
+            lin_vel_x = [0., 1.] # min max [m/s]
             lin_vel_y = [-0., 0.]   # min max [m/s]
             ang_vel_yaw = [-0., 0.]    # min max [rad/s]
             heading = [-0., 0.]
@@ -355,7 +363,7 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         num_mini_batches = 4
         disc_coef = 5
         bounds_loss_coef = 10
-        disc_grad_pen = 2
+        disc_grad_pen = 1
         learning_rate = 2.e-5
 
     class runner( LeggedRobotCfgPPO.runner ):
@@ -363,13 +371,16 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
         algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
-        max_iterations = 3000 # number of policy updates
+        max_iterations = 10000 # number of policy updates
+        actor_hidden_dims = [512, 256, 128]
+        critic_hidden_dims = [512, 256, 128]
+        activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
         amp_reward_coef = 2.0
         amp_motion_files = MOTION_FILES
         amp_num_preload_transitions = 2000000
         amp_task_reward_lerp = 0.5
-        amp_discr_hidden_dims = [512,512]
+        amp_discr_hidden_dims = [256, 256]
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4
         LOG_WANDB = True
