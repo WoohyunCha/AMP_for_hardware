@@ -227,10 +227,8 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         foot_name = "Foot_Link"
         # foot_name = "AnkleRoll_Link"
         penalize_contacts_on = []
-        # penalize_contacts_on = ['bolt_lower_leg_right_side', 'bolt_body', 'bolt_hip_fe_left_side', 'bolt_hip_fe_right_side', ' bolt_lower_leg_left_side', 'bolt_shoulder_fe_left_side', 'bolt_shoulder_fe_right_side', 'bolt_trunk', 'bolt_upper_leg_left_side', 'bolt_upper_leg_right_side']
-        terminate_after_contacts_on = ['base', 'Knee', 'Thigh', 'Head', 'Wrist']
+        terminate_after_contacts_on = ['base', 'Knee', 'Thigh', 'Head', 'Wrist', 'Foot_Redundant']
         termination_height = (0.7, 1.0)
-        self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         disable_gravity = False
         collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         fix_base_link = False # fixe the base of the robot
@@ -272,7 +270,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.25
-        # tracking_sigma = 0.2
+        tracking_sigma = 0.1
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
             tracking_lin_vel = 50
@@ -300,7 +298,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             height_measurements = 5.0
         clip_observations = 100.
         clip_actions = 100.
-        normalize_observation = True
+        normalize_observation = True # True means we keep running estimates of mean and variance to normalize the observation vector
 
     class commands:
         curriculum = False
@@ -355,6 +353,16 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'
     seed = 1
+    class policy:
+        init_noise_std = 1.0
+        actor_hidden_dims = [512, 512]
+        critic_hidden_dims = [512, 512]
+        activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+        # only for 'ActorCriticRecurrent':
+        # rnn_type = 'lstm'
+        # rnn_hidden_size = 512
+        # rnn_num_layers = 1
+
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         value_loss_coef = .5
         entropy_coef = 0.01
@@ -372,14 +380,11 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
         max_iterations = 10000 # number of policy updates
-        actor_hidden_dims = [512, 256, 128]
-        critic_hidden_dims = [512, 256, 128]
-        activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
         amp_reward_coef = 2.0
         amp_motion_files = MOTION_FILES
         amp_num_preload_transitions = 2000000
-        amp_task_reward_lerp = 0.5
+        amp_task_reward_lerp = 0.3
         amp_discr_hidden_dims = [256, 256]
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4

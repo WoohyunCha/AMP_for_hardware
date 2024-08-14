@@ -57,6 +57,7 @@ class TOCABIAMP(LeggedRobot):
         self.reference_state_initialization_prob = cfg.env.reference_state_initialization_prob
         self.normalizer_obs = None
         self.control_ticks = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
+        self.universal_tick = 0
         if cfg.normalization.normalize_observation:
             self.normalizer_obs = Normalizer_obs(self.num_privileged_obs)
 
@@ -107,6 +108,8 @@ class TOCABIAMP(LeggedRobot):
             policy_obs = self.obs_buf
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
+        
+        self.universal_tick += 1
 
         return policy_obs, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states
 
@@ -163,6 +166,7 @@ class TOCABIAMP(LeggedRobot):
         self.height_buf = self.root_states[:, 2] < self.termination_height[0]
         self.height_buf |= self.root_states[:,2] > self.termination_height[1]
         self.reset_buf |= self.height_buf
+
 
     def reset_idx(self, env_ids):
         """ Reset some environments.
@@ -693,7 +697,7 @@ class TOCABIAMP(LeggedRobot):
         noise_vec[24:36] = noise_scales.dof_vel * noise_level 
         noise_vec[36:48] = 0. # previous actions
         if self.cfg.terrain.measure_heights:
-            noise_vec[48:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
+            noise_vec[48:235] = noise_scales.height_measurements* noise_level
         return noise_vec
 
     #----------------------------------------
@@ -777,7 +781,7 @@ class TOCABIAMP(LeggedRobot):
         # The jacobian maps joint velocities (num_dofs + 6) to spatial velocities of CoM frame of each link in global frame
         # https://nvidia-omniverse.github.io/PhysX/physx/5.1.0/docs/Articulations.html#jacobian
 
-        self.rb_states = gymtorch.wrap_tensor(_rb_states).view(self.num_envs, self.num_bodies, 13)
+        self.rb_states = gymtorch.wrap_tensor(_rb_states).view(self.num_envs, self.num_bodies, 13) # Retrieves buffer for Rigid body states. The buffer has shape (num_rigid_bodies, 13). State for each rigid body contains position([0:3]), rotation([3:7]), linear velocity([7:10]), and angular velocity([10:13]).
         self.rb_inertia = gymtorch.torch.zeros((self.num_envs, self.num_bodies, 3, 3), device=self.device) # [Ix, Iy, Iz]
         self.rb_mass = gymtorch.torch.zeros((self.num_envs, self.num_bodies), device=self.device) # link mass
         self.rb_com = gymtorch.torch.zeros((self.num_envs, self.num_bodies, 3), device = self.device) # [comX, comY, comZ] in link's origin frame 
@@ -821,6 +825,14 @@ class TOCABIAMP(LeggedRobot):
 
         return torch.concat((Lfoot_positions_local, Rfoot_positions_local), dim=-1)
     
+    def foot_positions_in_global_frame(self):
+
+        feet_indices = self.feet_indices
+        feet_states = self.rb_states[:, feet_indices, :]
+        assert feet_states.shape == (self.num_envs, 2, 13), f"feet state shape is {feet_states.shape}"
+
+        return torch.concat((feet_states[:, 0, :3], feet_states[:, 1, :3]), dim=-1)        
+
     def foot_rotations_in_base_frame(self):
         feet_indices = self.feet_indices
         feet_states = self.rb_states[:, feet_indices, :]
