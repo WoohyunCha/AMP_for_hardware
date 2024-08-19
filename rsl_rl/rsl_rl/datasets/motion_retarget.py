@@ -17,7 +17,7 @@ target_MJCF_file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/
 source_MJCF_file = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/cmu.xml'
 # target_MJCF_file = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/cmu.xml'
 # JSON_file = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json'
-JSON_file = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/cmu_walk_1.json'
+# JSON_file = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/cmu_walk_1.json'
 RETARGET_file = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/retarget_motions/retarget_reference_data.txt'
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

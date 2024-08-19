@@ -10,12 +10,12 @@ class ObservationBuffer:
         self.skips = skips # The number of skips between observations
         if self.skips is None:
             self.skips = 1
-        self.num_obs_total = num_obs * include_history_steps * self.skips
+        self.num_obs_total = num_obs * ((include_history_steps-1) * self.skips + 1)
 
         self.obs_buf = torch.zeros(self.num_envs, self.num_obs_total, device=self.device, dtype=torch.float)
 
     def reset(self, reset_idxs, new_obs):
-        self.obs_buf[reset_idxs] = new_obs.repeat(1, self.skips * self.include_history_steps)
+        self.obs_buf[reset_idxs] = new_obs.repeat(1, ((self.include_history_steps-1) * self.skips + 1))
 
     def insert(self, new_obs):
         # # Shift observations back.
@@ -39,10 +39,22 @@ class ObservationBuffer:
                 include_history_steps - 1 is the oldest observation.
         """
 
+        # obs = []
+        # for obs_id in reversed(sorted(obs_ids)):
+        #     slice_idx = self.include_history_steps - obs_id - 1
+        #     obs.append(self.obs_buf[:, self.skips * slice_idx * self.num_obs : (self.skips * slice_idx + 1) * self.num_obs])
+        # return torch.cat(obs, dim=-1)
         obs = []
-        for obs_id in reversed(sorted(obs_ids)):
+        for obs_id in (sorted(obs_ids)):
             slice_idx = self.include_history_steps - obs_id - 1
-            obs.append(self.obs_buf[:, self.skips * slice_idx * self.num_obs : (self.skips * slice_idx + 1) * self.num_obs])
+            start = -(self.skips * slice_idx + 1)* self.num_obs
+            end = -self.skips * slice_idx * self.num_obs
+            if obs_id == obs_ids[-1]:
+                assert end == 0
+            if end == 0:
+                obs.append(self.obs_buf[:, start :])
+            else:            
+                obs.append(self.obs_buf[:, start : end])
         return torch.cat(obs, dim=-1)
 
 # device = 'cuda:0'

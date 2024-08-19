@@ -79,19 +79,19 @@ numRows = size(dataMatrix, 1);
 % Create a vector of row indices
 rowIndices = 1:numRows;
 
-% Plot the 21st column against the row indices
-figure;
-subplot(2,1,1);  % Create a subplot for the 21st column
-plot(rowIndices, dataMatrix(:, 21), 'o-');
-xlabel('Row Index');
-ylabel('21st Column');
-title('Plot of 21st Column vs Row Index');
-grid on;
-
-% Plot the last column against the row indices
-subplot(2,1,2);  % Create a subplot for the last column
-plot(rowIndices, dataMatrix(:, end), 'o-');
-xlabel('Row Index');
-ylabel('Last Column');
-title('Plot of Last Column vs Row Index');
-grid on;
+% % Plot the 21st column against the row indices
+% figure;
+% subplot(2,1,1);  % Create a subplot for the 21st column
+% plot(rowIndices, dataMatrix(:, 21), 'o-');
+% xlabel('Row Index');
+% ylabel('21st Column');
+% title('Plot of 21st Column vs Row Index');
+% grid on;
+% 
+% % Plot the last column against the row indices
+% subplot(2,1,2);  % Create a subplot for the last column
+% plot(rowIndices, dataMatrix(:, end), 'o-');
+% xlabel('Row Index');
+% ylabel('Last Column');
+% title('Plot of Last Column vs Row Index');
+% grid on;

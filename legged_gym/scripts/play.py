@@ -58,13 +58,14 @@ def play(args):
         env_cfg.commands.ranges.lin_vel_y = [0., 0.]
         env_cfg.commands.ranges.heading = [0.,0.]
     train_cfg.runner.amp_num_preload_transitions = 100
+    env_cfg.env.play = True
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
     # load policy
     train_cfg.runner.resume = True
     train_cfg.runner.LOG_WANDB = False
-    ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
+    ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg, play=True)
     policy = ppo_runner.get_inference_policy(device=env.device)
     ppo_runner.env.set_normalizer_eval()    
     _, _ = env.reset()

@@ -1,7 +1,19 @@
 import re, json
 import numpy as np
 from scipy.linalg import expm
+import os
 
+'''
+ASF->XML FILE CONVERTER
+This script takes in ASF file and converts it to XML file.
+Run this script before running CMU_parser.py.
+Specify the path to the ASF file, and the path where you wish to save the converted XML file.
+VERY IMPORTANT
+In order to run CMU_parser.py, you must edit the converted XML file, so that the upper body information is commented out and the names of the joints match the TARGET XML file.
+'''
+
+ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/asf/91.asf'
+XML_FILE = os.path.join('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/', os.path.splitext(os.path.basename(ASF_FILE))[0]+'.xml')
 
 def isfloat(value):
     try:
@@ -204,8 +216,7 @@ class AsfParser(object):
         with open(file_name, 'w') as f:
             f.write(xml)
 
-ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07.asf'
-XML_FILE = 'cmu.xml'
+
 parser = AsfParser()
 parser.parse(ASF_FILE)
 parser.save_mujoco_xml(XML_FILE)

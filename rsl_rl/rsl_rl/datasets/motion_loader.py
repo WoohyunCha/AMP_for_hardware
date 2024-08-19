@@ -1,548 +1,3 @@
-# import os
-# import glob
-# import json
-# import logging
-
-# import torch
-# import numpy as np
-# from pybullet_utils import transformations
-
-# from rsl_rl.utils import utils
-# from rsl_rl.datasets import pose3d
-# from rsl_rl.datasets import motion_util
-# from isaacgym.torch_utils import *
-
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# PROCESSED_DATA_DIR = os.path.join(BASE_DIR, 'mocap_motions', 'AMP_trajectories')
-
-
-# class AMPLoader:
-#     FRAME_TIME = 0
-#     MODEL_DOF = 33
-
-#     POS_SIZE = 3
-#     ROT_SIZE = 4
-#     JOINT_POS_SIZE = 12
-#     LINEAR_VEL_SIZE = 3
-#     ANGULAR_VEL_SIZE = 3
-#     JOINT_VEL_SIZE = 12
-#     ROOT_POS_SIZE = 1 # base height
-#     ROOT_ROT_SIZE = 4 # projected gravity
-
-#     OBSERVATION_DIM = ROOT_POS_SIZE + ROOT_ROT_SIZE + LINEAR_VEL_SIZE + ANGULAR_VEL_SIZE\
-#          + JOINT_POS_SIZE + JOINT_VEL_SIZE + 2*(POS_SIZE+ROT_SIZE)
-
-#     ROOT_POS_START_IDX = 0
-#     ROOT_POS_END_IDX = ROOT_POS_START_IDX + ROOT_POS_SIZE
-
-#     ROOT_ROT_START_IDX = ROOT_POS_END_IDX
-#     ROOT_ROT_END_IDX = ROOT_ROT_START_IDX + ROOT_ROT_SIZE
-
-#     LINEAR_VEL_START_IDX = ROOT_ROT_END_IDX
-#     LINEAR_VEL_END_IDX = LINEAR_VEL_START_IDX + LINEAR_VEL_SIZE
-
-#     ANGULAR_VEL_START_IDX = LINEAR_VEL_END_IDX
-#     ANGULAR_VEL_END_IDX = ANGULAR_VEL_START_IDX + ANGULAR_VEL_SIZE
-
-#     JOINT_POSE_START_IDX = ANGULAR_VEL_END_IDX
-#     JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
-
-#     JOINT_VEL_START_IDX = JOINT_POSE_END_IDX
-#     JOINT_VEL_END_IDX = JOINT_VEL_START_IDX + JOINT_VEL_SIZE
-
-#     FOOT_POS_START_IDX = JOINT_VEL_END_IDX
-#     FOOT_POS_END_IDX = FOOT_POS_START_IDX + 2*POS_SIZE
-
-#     FOOT_ROT_START_IDX = FOOT_POS_END_IDX
-#     FOOT_ROT_END_IDX = FOOT_ROT_START_IDX + 2*ROT_SIZE
-
-#     HZ = 2000
-#     ##### BE CAREFUL!!!!!!!!! REFERENCE LENGTH MUST BE A CYCLE OF WALKING!!! NOTE THAT REFERENCES HAVE DIFFERENT STEP TIME
-#     REFERENCE_START_INDEX = int(5.6*HZ)
-
-#     REFERENCE_END_INDEX = int(7.4005*HZ)
-    
-
-#     BASE_PELVIS_OFFSET = (0, 0, 0)
-
-#     def __init__(
-#             self,
-#             device,
-#             time_between_frames,
-#             data_dir='',
-#             preload_transitions=False,
-#             num_preload_transitions=1000000,
-#             motion_files=glob.glob('datasets/motion_files2/*'),
-#             ):
-#         """Expert dataset provides AMP observations from Dog mocap dataset.
-
-#         time_between_frames: Amount of time in seconds between transition.
-#         """
-#         self.device = device
-#         self.time_between_frames = time_between_frames
-        
-#         # Values to store for each trajectory.
-#         self.trajectories = []
-#         self.trajectories_full = []
-#         self.trajectory_names = []
-#         self.trajectory_idxs = []
-#         self.trajectory_lens = []  # Traj length in seconds.
-#         self.trajectory_weights = []
-#         self.trajectory_frame_durations = []
-#         self.trajectory_num_frames = []
-#         for i, motion_file in enumerate(motion_files):
-#             self.trajectory_names.append(motion_file.split('.')[0])
-#             with open(motion_file, "r") as f:
-#                 motion_json = json.load(f)
-#                 motion_data = np.array(motion_json["Frames"]) # motion data in json form.
-#                 # motion_data = self.reorder_from_pybullet_to_isaac(motion_data) # For A1 only
-
-#                 # # Normalize and standardize quaternions.
-#                 # for f_i in range(motion_data.shape[0]):
-#                 #     root_rot = AMPLoader.get_root_rot(motion_data[f_i])
-#                 #     root_rot = pose3d.QuaternionNormalize(root_rot)
-#                 #     root_rot = motion_util.standardize_quaternion(root_rot)
-#                 #     motion_data[
-#                 #         f_i,
-#                 #         AMPLoader.POS_SIZE:
-#                 #             (AMPLoader.POS_SIZE +
-#                 #              AMPLoader.ROT_SIZE)] = root_rot
-                
-#                 self.trajectories.append( # Only joint space
-#                     self.process_data(motion_data)[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
-#                     )
-#                 self.trajectories_full.append(
-#                     self.process_data(motion_data)
-#                 )
-
-#                 self.trajectory_idxs.append(i)
-#                 self.trajectory_weights.append(
-#                     float(motion_json["MotionWeight"]))
-#                 frame_duration = float(motion_data[1,AMPLoader.FRAME_TIME] - motion_data[0,AMPLoader.FRAME_TIME])
-#                 self.trajectory_frame_durations.append(frame_duration)
-#                 traj_len = (AMPLoader.REFERENCE_END_INDEX-AMPLoader.REFERENCE_START_INDEX - 1) * frame_duration
-#                 # traj_len = (motion_data.shape[0] - 1) * frame_duration
-#                 self.trajectory_lens.append(traj_len)
-#                 # self.trajectory_num_frames.append(float(motion_data.shape[0]))
-#                 self.trajectory_num_frames.append(float(AMPLoader.REFERENCE_END_INDEX-AMPLoader.REFERENCE_START_INDEX))
-
-#             print(f"Loaded {traj_len}s. motion from {motion_file}.")
-#             print(f"Size of Reference Observation : {self.observation_dim}")
-        
-#         # Trajectory weights are used to sample some trajectories more than others.
-#         self.trajectory_weights = np.array(self.trajectory_weights) / np.sum(self.trajectory_weights)
-#         self.trajectory_frame_durations = np.array(self.trajectory_frame_durations)
-#         self.trajectory_lens = np.array(self.trajectory_lens)
-#         self.trajectory_num_frames = np.array(self.trajectory_num_frames)
-
-#         # Preload transitions.
-#         self.preload_transitions = preload_transitions
-
-#         if self.preload_transitions:
-#             print(f'Preloading {num_preload_transitions} transitions')
-#             traj_idxs = self.weighted_traj_idx_sample_batch(num_preload_transitions)
-#             times = self.traj_time_sample_batch(traj_idxs)
-#             self.preloaded_s = self.get_full_frame_at_time_batch(traj_idxs, times) # error
-#             self.preloaded_s_next = self.get_full_frame_at_time_batch(traj_idxs, times + self.time_between_frames)
-#             print(f'Finished preloading')
-
-
-#         self.all_trajectories_full = torch.vstack(self.trajectories_full)
-
-#     def weighted_traj_idx_sample(self):
-#         """Get traj idx via weighted sampling."""
-#         return np.random.choice(
-#             self.trajectory_idxs, p=self.trajectory_weights)
-
-#     def weighted_traj_idx_sample_batch(self, size):
-#         """Batch sample traj idxs."""
-#         return np.random.choice(
-#             self.trajectory_idxs, size=size, p=self.trajectory_weights,
-#             replace=True)
-
-#     def traj_time_sample(self, traj_idx):
-#         """Sample random time for traj."""
-#         subst = self.time_between_frames + self.trajectory_frame_durations[traj_idx]
-#         return max(
-#             0, (self.trajectory_lens[traj_idx] * np.random.uniform() - subst))
-
-#     def traj_time_sample_batch(self, traj_idxs):
-#         """Sample random time for multiple trajectories."""
-#         subst = self.time_between_frames + self.trajectory_frame_durations[traj_idxs]
-#         time_samples = self.trajectory_lens[traj_idxs] * np.random.uniform(size=len(traj_idxs)) - subst
-#         return np.maximum(np.zeros_like(time_samples), time_samples)
-
-#     def slerp(self, val0, val1, blend):
-#         return (1.0 - blend) * val0 + blend * val1
-
-#     def get_trajectory(self, traj_idx):
-#         """Returns trajectory of AMP observations."""
-#         return self.trajectories_full[traj_idx]
-
-#     def get_frame_at_time(self, traj_idx, time):
-#         """Returns frame for the given trajectory at the specified time."""
-#         p = float(time) / self.trajectory_lens[traj_idx]
-#         n = self.trajectories[traj_idx].shape[0]
-#         idx_low, idx_high = int(np.floor(p * n)), int(np.ceil(p * n))
-#         frame_start = self.trajectories[traj_idx][idx_low]
-#         frame_end = self.trajectories[traj_idx][idx_high]
-#         blend = p * n - idx_low
-#         return self.slerp(frame_start, frame_end, blend)
-
-#     def get_frame_at_time_batch(self, traj_idxs, times):
-#         """Returns frame for the given trajectory at the specified time."""
-#         p = times / self.trajectory_lens[traj_idxs]
-#         n = self.trajectory_num_frames[traj_idxs]
-#         idx_low, idx_high = np.floor(p * n).astype(np.int), np.ceil(p * n).astype(np.int)
-#         all_frame_starts = torch.zeros(len(traj_idxs), self.observation_dim, device=self.device)
-#         all_frame_ends = torch.zeros(len(traj_idxs), self.observation_dim, device=self.device)
-#         for traj_idx in set(traj_idxs):
-#             trajectory = self.trajectories[traj_idx]
-#             traj_mask = traj_idxs == traj_idx
-#             all_frame_starts[traj_mask] = trajectory[idx_low[traj_mask]]
-#             all_frame_ends[traj_mask] = trajectory[idx_high[traj_mask]]
-#         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
-#         return self.slerp(all_frame_starts, all_frame_ends, blend)
-
-#     def get_full_frame_at_time(self, traj_idx, time):
-#         """Returns full frame for the given trajectory at the specified time."""
-#         p = float(time) / self.trajectory_lens[traj_idx]
-#         n = self.trajectories_full[traj_idx].shape[0]
-#         idx_low, idx_high = int(np.floor(p * n)), int(np.ceil(p * n))
-#         frame_start = self.trajectories_full[traj_idx][idx_low]
-#         frame_end = self.trajectories_full[traj_idx][idx_high]
-#         blend = p * n - idx_low
-#         return self.blend_frame_pose(frame_start, frame_end, blend)
-
-#     def get_full_frame_at_time_batch(self, traj_idxs, times):
-#         p = times / self.trajectory_lens[traj_idxs]
-#         n = self.trajectory_num_frames[traj_idxs]
-#         idx_low, idx_high = np.floor(p * n).astype(np.int), np.ceil(p * n).astype(np.int)
-#         all_frame_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, device=self.device)
-#         all_frame_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, device=self.device)
-#         all_frame_rot_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, device=self.device)
-#         all_frame_rot_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, device=self.device)
-#         all_frame_linvel_starts = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, device=self.device)
-#         all_frame_linvel_ends = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, device=self.device)
-#         all_frame_angvel_starts = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, device=self.device)
-#         all_frame_angvel_ends = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, device=self.device)
-#         all_frame_amp_starts = torch.zeros(len(traj_idxs), AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, device=self.device)
-#         all_frame_amp_ends = torch.zeros(len(traj_idxs),  AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, device=self.device)
-#         all_frame_foot_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, device=self.device)
-#         all_frame_foot_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, device=self.device)
-#         all_frame_Lfoot_rot_starts = torch.zeros(len(traj_idxs), AMPLoader.ROT_SIZE, device=self.device)
-#         all_frame_Lfoot_rot_ends = torch.zeros(len(traj_idxs), AMPLoader.ROT_SIZE, device=self.device)
-#         all_frame_Rfoot_rot_starts = torch.zeros(len(traj_idxs), AMPLoader.ROT_SIZE, device=self.device)
-#         all_frame_Rfoot_rot_ends = torch.zeros(len(traj_idxs), AMPLoader.ROT_SIZE, device=self.device)
-#         for traj_idx in set(traj_idxs):
-#             trajectory = self.trajectories_full[traj_idx]
-#             traj_mask = traj_idxs == traj_idx
-#             all_frame_pos_starts[traj_mask] = AMPLoader.get_root_pos_batch(trajectory[idx_low[traj_mask]])
-#             all_frame_pos_ends[traj_mask] = AMPLoader.get_root_pos_batch(trajectory[idx_high[traj_mask]])
-#             all_frame_rot_starts[traj_mask] = AMPLoader.get_root_rot_batch(trajectory[idx_low[traj_mask]])
-#             all_frame_rot_ends[traj_mask] = AMPLoader.get_root_rot_batch(trajectory[idx_high[traj_mask]])
-#             all_frame_linvel_starts[traj_mask] = AMPLoader.get_linear_vel_batch(trajectory[idx_high[traj_mask]])
-#             all_frame_linvel_ends[traj_mask] = AMPLoader.get_linear_vel_batch(trajectory[idx_low[traj_mask]])
-#             all_frame_angvel_starts[traj_mask] = AMPLoader.get_angular_vel_batch(trajectory[idx_high[traj_mask]])
-#             all_frame_angvel_ends[traj_mask] = AMPLoader.get_angular_vel_batch(trajectory[idx_low[traj_mask]])
-#             all_frame_amp_starts[traj_mask] = trajectory[idx_low[traj_mask]][:, AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
-#             all_frame_amp_ends[traj_mask] = trajectory[idx_high[traj_mask]][:, AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
-#             all_frame_foot_pos_starts[traj_mask] = AMPLoader.get_foot_pos_batch(trajectory[idx_low[traj_mask]])
-#             all_frame_foot_pos_ends[traj_mask] = AMPLoader.get_foot_pos_batch(trajectory[idx_high[traj_mask]])
-#             all_frame_Lfoot_rot_starts[traj_mask] = trajectory[idx_low[traj_mask]][:, AMPLoader.FOOT_ROT_START_IDX:AMPLoader.FOOT_ROT_START_IDX+AMPLoader.ROT_SIZE]
-#             all_frame_Lfoot_rot_ends[traj_mask] = trajectory[idx_high[traj_mask]][:, AMPLoader.FOOT_ROT_START_IDX:AMPLoader.FOOT_ROT_START_IDX+AMPLoader.ROT_SIZE]
-#             all_frame_Rfoot_rot_starts[traj_mask] = trajectory[idx_low[traj_mask]][:, AMPLoader.FOOT_ROT_START_IDX+AMPLoader.ROT_SIZE:AMPLoader.FOOT_ROT_END_IDX]
-#             all_frame_Rfoot_rot_ends[traj_mask] = trajectory[idx_high[traj_mask]][:, AMPLoader.FOOT_ROT_START_IDX+AMPLoader.ROT_SIZE:AMPLoader.FOOT_ROT_END_IDX]
-#         assert (~torch.isfinite(all_frame_Lfoot_rot_starts)).sum() == 0, f"low is {idx_low[traj_mask]}" #TODO
-
-#         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
-
-#         pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend)
-#         rot_blend = self.slerp(all_frame_rot_starts, all_frame_rot_ends, blend)
-#         lin_blend = self.slerp(all_frame_linvel_starts, all_frame_linvel_ends, blend)
-#         ang_blend = self.slerp(all_frame_angvel_starts, all_frame_angvel_ends, blend)
-#         amp_blend = self.slerp(all_frame_amp_starts, all_frame_amp_ends, blend)
-#         foot_pos_blend = self.slerp(all_frame_foot_pos_starts, all_frame_foot_pos_ends, blend)
-#         Lfoot_rot_blend = utils.quaternion_slerp(all_frame_Lfoot_rot_starts, all_frame_Lfoot_rot_ends, blend)
-#         assert (~torch.isfinite(all_frame_Lfoot_rot_starts)).sum() == 0, "starts is wrong?" #TODO
-#         assert (~torch.isfinite(all_frame_Lfoot_rot_ends)).sum() == 0, "ends is wrong?" #TODO
-#         assert (~torch.isfinite(Lfoot_rot_blend)).sum() == 0, "Blend is wrong?" #TODO
-#         Rfoot_rot_blend = utils.quaternion_slerp(all_frame_Rfoot_rot_starts, all_frame_Rfoot_rot_ends, blend)
-#         ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend, Lfoot_rot_blend, Rfoot_rot_blend], dim=-1)
-#         return ret
-
-#     def get_frame(self):
-#         """Returns random frame."""
-#         traj_idx = self.weighted_traj_idx_sample()
-#         sampled_time = self.traj_time_sample(traj_idx)
-#         return self.get_frame_at_time(traj_idx, sampled_time)
-
-#     def get_full_frame(self):
-#         """Returns random full frame."""
-#         traj_idx = self.weighted_traj_idx_sample()
-#         sampled_time = self.traj_time_sample(traj_idx)
-#         return self.get_full_frame_at_time(traj_idx, sampled_time)
-
-#     def get_full_frame_batch(self, num_frames):
-#         if self.preload_transitions:
-#             idxs = np.random.choice(
-#                 self.preloaded_s.shape[0], size=num_frames)
-#             return self.preloaded_s[idxs]
-#         else:
-#             traj_idxs = self.weighted_traj_idx_sample_batch(num_frames)
-#             times = self.traj_time_sample_batch(traj_idxs)
-#             return self.get_full_frame_at_time_batch(traj_idxs, times)
-
-#     def blend_frame_pose(self, frame0, frame1, blend):
-#         """Linearly interpolate between two frames, including orientation.
-
-#         Args:
-#             frame0: First frame to be blended corresponds to (blend = 0).
-#             frame1: Second frame to be blended corresponds to (blend = 1).
-#             blend: Float between [0, 1], specifying the interpolation between
-#             the two frames.
-#         Returns:
-#             An interpolation of the two frames.
-#         """
-
-#         root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
-#         root_rot0, root_rot1 = AMPLoader.get_root_rot(frame0), AMPLoader.get_root_rot(frame1)
-#         linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
-#         angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
-#         joints0, joints1 = AMPLoader.get_joint_pose(frame0), AMPLoader.get_joint_pose(frame1)
-#         joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
-#         foot_pos0, foot_pos1 = AMPLoader.get_foot_pos(frame0), AMPLoader.get_foot_pos(frame1)
-#         Lfoot_rot0, Lfoot_rot1 = AMPLoader.get_foot_rot(frame0)[0:AMPLoader.ROT_SIZE], AMPLoader.get_foot_rot(frame1)[0:AMPLoader.ROT_SIZE]
-#         Rfoot_rot0, Rfoot_rot1 = AMPLoader.get_foot_rot(frame0)[AMPLoader.ROT_SIZE:], AMPLoader.get_foot_rot(frame1)[AMPLoader.ROT_SIZE:]
-        
-#         blend_root_pos = self.slerp(root_pos0, root_pos1, blend)
-#         blend_root_rot = self.slerp(root_rot0, root_rot1, blend)
-#         blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
-#         blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
-#         blend_joints = self.slerp(joints0, joints1, blend)
-#         blend_joints_vel = self.slerp(joint_vel_0, joint_vel_1, blend)
-#         blend_foot_pos = self.slerp(foot_pos0, foot_pos1, blend)
-#         blend_Lfoot_rot = transformations.quaternion_slerp(
-#             Lfoot_rot0.cpu().numpy(), Lfoot_rot1.cpu().numpy(), blend)
-#         blend_Rfoot_rot = transformations.quaternion_slerp(
-#             Rfoot_rot0.cpu().numpy(), Rfoot_rot1.cpu().numpy(), blend)
-#         blend_Lfoot_rot = torch.tensor(
-#             motion_util.standardize_quaternion(blend_Lfoot_rot),
-#             dtype=torch.float32, device=self.device
-#         )
-#         blend_Rfoot_rot = torch.tensor(
-#             motion_util.standardize_quaternion(blend_Rfoot_rot),
-#             dtype=torch.float32, device=self.device
-#         )
-#         ret = torch.cat([
-#             blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
-#             blend_foot_pos, blend_Lfoot_rot, blend_Rfoot_rot
-#             ], dim=-1)
-#         return ret
-
-
-#     def feed_forward_generator(self, num_mini_batch, mini_batch_size):
-#         """Generates a batch of AMP transitions."""
-#         for _ in range(num_mini_batch):
-#             if self.preload_transitions:
-#                 idxs = np.random.choice(
-#                     self.preloaded_s.shape[0], size=mini_batch_size)
-#                 s = self.preloaded_s[idxs, :]
-#                 s_next = self.preloaded_s_next[idxs, :]
-
-#             else:
-#                 s, s_next = [], []
-#                 traj_idxs = self.weighted_traj_idx_sample_batch(mini_batch_size)
-#                 times = self.traj_time_sample_batch(traj_idxs)
-#                 for traj_idx, frame_time in zip(traj_idxs, times):
-#                     s.append(self.get_full_frame_at_time(traj_idx, frame_time))
-#                     s_next.append(
-#                         self.get_full_frame_at_time(
-#                             traj_idx, frame_time + self.time_between_frames))
-                
-#                 s = torch.vstack(s)
-#                 s_next = torch.vstack(s_next)
-#             yield s, s_next
-
-#     @property
-#     def observation_dim(self):
-#         """Size of AMP observations."""
-#         return self.OBSERVATION_DIM
-
-#     @property
-#     def num_motions(self):
-#         return len(self.trajectory_names)
-
-#     def get_root_pos(pose):
-#         return pose[AMPLoader.ROOT_POS_START_IDX:AMPLoader.ROOT_POS_END_IDX]
-
-#     def get_root_pos_batch(poses):
-#         return poses[:, AMPLoader.ROOT_POS_START_IDX:AMPLoader.ROOT_POS_END_IDX]
-
-#     def get_root_rot(pose):
-#         return pose[AMPLoader.ROOT_ROT_START_IDX:AMPLoader.ROOT_ROT_END_IDX]
-
-#     def get_root_rot_batch(poses):
-#         return poses[:, AMPLoader.ROOT_ROT_START_IDX:AMPLoader.ROOT_ROT_END_IDX]
-
-#     def get_linear_vel(pose):
-#         return pose[AMPLoader.LINEAR_VEL_START_IDX:AMPLoader.LINEAR_VEL_END_IDX]
-    
-#     def get_linear_vel_batch(poses):
-#         return poses[:, AMPLoader.LINEAR_VEL_START_IDX:AMPLoader.LINEAR_VEL_END_IDX]
-
-#     def get_angular_vel(pose):
-#         return pose[AMPLoader.ANGULAR_VEL_START_IDX:AMPLoader.ANGULAR_VEL_END_IDX]  
-
-#     def get_angular_vel_batch(poses):
-#         return poses[:, AMPLoader.ANGULAR_VEL_START_IDX:AMPLoader.ANGULAR_VEL_END_IDX]
-    
-#     def get_joint_pose(pose):
-#         return pose[AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_POSE_END_IDX]
-
-#     def get_joint_pose_batch(poses):
-#         return poses[:, AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_POSE_END_IDX]
-  
-#     def get_joint_vel(pose):
-#         return pose[AMPLoader.JOINT_VEL_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
-
-#     def get_joint_vel_batch(poses):
-#         return poses[:, AMPLoader.JOINT_VEL_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
-          
-#     def get_foot_pos(pose):
-#         return pose[AMPLoader.FOOT_POS_START_IDX:AMPLoader.FOOT_POS_END_IDX]
-
-#     def get_foot_pos_batch(poses):
-#         return poses[:, AMPLoader.FOOT_POS_START_IDX:AMPLoader.FOOT_POS_END_IDX]
-
-#     def get_foot_rot(pose):
-#         return pose[AMPLoader.FOOT_ROT_START_IDX:AMPLoader.FOOT_ROT_END_IDX]
-
-#     def get_foot_rot_batch(poses):
-#         return poses[:, AMPLoader.FOOT_ROT_START_IDX:AMPLoader.FOOT_ROT_END_IDX]
-
-
-#     def process_data(self, traj: np.ndarray): # Process raw data from Mujoco
-#         time = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX,0]
-#         pelv_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 1:4]
-#         pelv_rpy = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 4:7] # roll, pitch, yaw order
-#         pelv_vel = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 7:13]
-#         q_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 13:13+AMPLoader.JOINT_POS_SIZE]
-#         start = 13+AMPLoader.MODEL_DOF
-#         end = start + self.JOINT_VEL_SIZE
-#         q_vel = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
-#         start += AMPLoader.MODEL_DOF
-#         end = start + 3
-#         L_foot_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
-#         start = end
-#         end = start + 3
-#         L_foot_rpy = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
-#         start = end
-#         end = start + 3
-#         R_foot_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
-#         start=end
-#         end = start + 3
-#         R_foot_rpy = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
-#         assert end == 1+3+3+6+33+33+3+3+3+3, f"process data, shape mismatch {end}"
-
-#         # torch versions of data
-#         pelv_pos_torch = to_torch(pelv_pos)
-#         pelv_vel_torch = to_torch(pelv_vel)
-#         q_pos_torch = to_torch(q_pos)
-#         q_vel_torch = to_torch(q_vel)
-#         L_foot_pos_torch = to_torch(L_foot_pos)
-#         L_foot_rpy_torch = to_torch(L_foot_rpy)
-#         R_foot_pos_torch = to_torch(R_foot_pos)
-#         R_foot_rpy_torch = to_torch(R_foot_rpy)
-
-#         # Process raw data
-#         pelvis_yaw =pelv_rpy[:, 2]
-#         pelvis_pitch = pelv_rpy[:, 1]
-#         pelvis_roll = pelv_rpy[:, 0]
-#         pelvis_quat = quat_from_euler_xyz(to_torch(pelvis_roll), to_torch(pelvis_pitch), to_torch(pelvis_yaw)) # tensor
-#         offset = np.array(self.BASE_PELVIS_OFFSET, dtype=float) # Pelvis is higher than base, in local frame
-#         global_offset = quat_rotate(pelvis_quat, to_torch(offset).repeat((pelvis_quat.shape[0], 1)))
-#         assert global_offset.shape == (pelv_rpy.shape[0], 3), f"global offset shape is {global_offset.shape}"
-#         base_pos_global_torch = pelv_pos_torch - global_offset
-
-#         # Create AMP observation
-#         base_height = base_pos_global_torch[:, 2]
-#         assert (~torch.isfinite(base_height)).sum() == 0, "Found non finite element"
-#         assert (~torch.isfinite(pelvis_quat)).sum() == 0, "Found non finite element 0"
-#         # gravity_vector = to_torch(get_axis_params(-1., 2), device=self.device).repeat((pelvis_yaw.shape[0], 1))
-#         # projected_gravity = quat_rotate_inverse(pelvis_quat, gravity_vector)
-#         base_lin_vel = quat_rotate_inverse(pelvis_quat, pelv_vel_torch[:, :3]) 
-#         assert (~torch.isfinite(base_lin_vel)).sum() == 0, "Found non finite element 1"
-#         base_ang_vel = quat_rotate_inverse(pelvis_quat, pelv_vel_torch[:, 3:])
-#         assert (~torch.isfinite(base_ang_vel)).sum() == 0, "Found non finite element 2"
-#         L_foot_pos_base_torch = quat_rotate_inverse(pelvis_quat, L_foot_pos_torch - base_pos_global_torch)
-#         assert (~torch.isfinite(L_foot_pos_base_torch)).sum() == 0, "Found non finite element 3"
-#         R_foot_pos_base_torch = quat_rotate_inverse(pelvis_quat, R_foot_pos_torch - base_pos_global_torch) 
-#         assert (~torch.isfinite(R_foot_pos_base_torch)).sum() == 0, "Found non finite element 4"
-#         L_foot_quat_global_torch = quat_from_euler_xyz(L_foot_rpy_torch[:, 0], L_foot_rpy_torch[:, 1], L_foot_rpy_torch[:, 2])
-#         assert (~torch.isfinite(L_foot_quat_global_torch)).sum() == 0, "Found non finite element 5"
-#         R_foot_quat_global_torch = quat_from_euler_xyz(R_foot_rpy_torch[:, 0], R_foot_rpy_torch[:, 1], R_foot_rpy_torch[:, 2])
-#         assert (~torch.isfinite(R_foot_quat_global_torch)).sum() == 0, "Found non finite element 6"
-#         L_foot_quat_base_torch = quat_mul(quat_conjugate(pelvis_quat), L_foot_quat_global_torch)
-#         assert (~torch.isfinite(L_foot_quat_base_torch)).sum() == 0, "Found non finite element 7"
-#         R_foot_quat_base_torch = quat_mul(quat_conjugate(pelvis_quat), R_foot_quat_global_torch)
-#         assert (~torch.isfinite(R_foot_quat_base_torch)).sum() == 0, "Found non finite element 8"
-#         ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1)
-#         with open(os.path.join(PROCESSED_DATA_DIR, 'processed_data'+'.txt'), "w") as file:
-#             for line in ret.cpu().numpy().tolist():
-#                 file.write(' '.join(map(str, line)) + '\n')
-#             print(f"Processed data written to txt file at "+PROCESSED_DATA_DIR)
-#         return ret
-    
-
-# ##################HELPER FUNCTIONS###################
-
-# def euler_to_rotation_matrix(euler_angles):
-#     """ Convert Euler angles (ZYX) to a rotation matrix. """
-#     B = euler_angles.shape[0]
-#     c = torch.cos(euler_angles)
-#     s = torch.sin(euler_angles)
-
-#     # Preallocate rotation matrix
-#     R = torch.zeros((B, 3, 3), dtype=torch.float32, device=euler_angles.device)
-
-#     # Fill in the entries
-#     R[:, 0, 0] = c[:, 1] * c[:, 0]
-#     R[:, 0, 1] = c[:, 1] * s[:, 0]
-#     R[:, 0, 2] = -s[:, 1]
-#     R[:, 1, 0] = s[:, 2] * s[:, 1] * c[:, 0] - c[:, 2] * s[:, 0]
-#     R[:, 1, 1] = s[:, 2] * s[:, 1] * s[:, 0] + c[:, 2] * c[:, 0]
-#     R[:, 1, 2] = s[:, 2] * c[:, 1]
-#     R[:, 2, 0] = c[:, 2] * s[:, 1] * c[:, 0] + s[:, 2] * s[:, 0]
-#     R[:, 2, 1] = c[:, 2] * s[:, 1] * s[:, 0] - s[:, 2] * c[:, 0]
-#     R[:, 2, 2] = c[:, 2] * c[:, 1]
-
-#     return R
-
-# def transform_vector(euler_angles, vectors):
-#     """ Transform vectors from frame A to B using a batch of Euler angles.
-    
-#     Args:
-#     - euler_angles (numpy.array): Array of shape [B, 3] containing Euler angles.
-#     - vectors (numpy.array): Array of shape [B, 3] containing vectors in frame A.
-    
-#     Returns:
-#     - transformed_vectors (numpy.array): Array of shape [B, 3] containing vectors in frame B.
-#     """
-#     # Convert inputs to torch tensors
-#     euler_angles = torch.tensor(euler_angles, dtype=torch.float32)
-#     vectors = torch.tensor(vectors, dtype=torch.float32)
-
-#     # Get rotation matrices from Euler angles
-#     R = euler_to_rotation_matrix(euler_angles)
-
-#     # Transform vectors
-#     transformed_vectors = torch.bmm(R, vectors.unsqueeze(-1)).squeeze(-1)
-
-#     # Convert back to numpy arrays
-#     return transformed_vectors.numpy()
-
-
 import os
 import glob
 import json
@@ -557,6 +12,7 @@ from rsl_rl.utils import utils
 from rsl_rl.datasets import pose3d
 from rsl_rl.datasets import motion_util
 from isaacgym.torch_utils import *
+from rsl_rl.datasets.mocap_motions.data.raw.CMU_open.CMU_parser import MotionRetarget
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROCESSED_DATA_DIR = os.path.join(BASE_DIR, 'mocap_motions', 'AMP_trajectories')
@@ -564,7 +20,7 @@ MJCF_file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyr
 
 class AMPLoader:
     FRAME_TIME = 0
-    MODEL_DOF = 33
+    MODEL_DOF = 12
 
     POS_SIZE = 3
     JOINT_POS_SIZE = 12
@@ -599,13 +55,19 @@ class AMPLoader:
     FOOT_POS_END_IDX = FOOT_POS_START_IDX + 2*POS_SIZE
 
 
-    HZ = 2000
-    # REFERENCE_START_INDEX = [int(5.6*HZ), int(4.4*HZ)]
-    # REFERENCE_END_INDEX = [int(7.4005*HZ), int(5.6005*HZ)]
-    # REFERENCE_START_INDEX = int(2.*HZ)
+    # HZ = 2000
+    # # REFERENCE_START_INDEX = [int(5.6*HZ), int(4.4*HZ)]
+    # # REFERENCE_END_INDEX = [int(7.4005*HZ), int(5.6005*HZ)]
+    # # REFERENCE_START_INDEX = int(2.*HZ)
+    # # REFERENCE_END_INDEX = int(5.6005*HZ)
+    # REFERENCE_START_INDEX = int(2.0*HZ)
     # REFERENCE_END_INDEX = int(5.6005*HZ)
-    REFERENCE_START_INDEX = int(2.0*HZ)
-    REFERENCE_END_INDEX = int(5.6005*HZ)
+
+
+    #CMU
+    HZ = 120
+    REFERENCE_START_INDEX = int(0.*HZ)
+    REFERENCE_END_INDEX = int(2.0*HZ)
 
     BASE_PELVIS_OFFSET = (0., 0., 0.)
 
@@ -613,11 +75,11 @@ class AMPLoader:
             self,
             device,
             time_between_frames,
-            data_dir='',
             preload_transitions=False,
             num_preload_transitions=1000000,
             motion_files=glob.glob('datasets/motion_files2/*'),
-            model_file=''
+            model_file='', play=False, iterations=3000,
+            reference_start_time = None, reference_end_time = None
             ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
@@ -634,6 +96,9 @@ class AMPLoader:
         self.trajectory_weights = []
         self.trajectory_frame_durations = []
         self.trajectory_num_frames = []
+        if reference_start_time is not None and reference_end_time is not None:
+            self.REFERENCE_START_INDEX = int(reference_start_time * self.HZ)
+            self.REFERENCE_END_INDEX = int(reference_end_time * self.HZ)
         for i, motion_file in enumerate(motion_files):
             self.trajectory_names.append(motion_file.split('.')[0])
             with open(motion_file, "r") as f:
@@ -651,7 +116,7 @@ class AMPLoader:
                 #         AMPLoader.POS_SIZE:
                 #             (AMPLoader.POS_SIZE +
                 #              AMPLoader.ROT_SIZE)] = root_rot
-                if (model_file == MJCF_file or model_file == ''): # Retarget
+                if (model_file == MJCF_file or model_file == ''): 
                     print("No retargetting motion")
                     processed_data_full, info = self.process_data(motion_data, i)
                     processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
@@ -660,8 +125,9 @@ class AMPLoader:
                     print("RETARGET REFERENCE MOTIONS")
                     print("Source file : ", MJCF_file)
                     print("Target file : ", model_file)
-                    motion_retarget = MotionRetarget(MJCF_file, self.process_data(motion_data, i)[0])
-                    processed_data_full, processed_data_joints = motion_retarget.retarget(model_file)
+                    motion_retarget = MotionRetarget(source_model_path=model_file, target_model_path=MJCF_file) # model_file is the source
+                    processed_data_full, _ = motion_retarget.retarget(motion_data, play, iterations)
+                    processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
 
                 self.trajectories.append( # Only joint space
                     processed_data_joints
@@ -977,7 +443,7 @@ class AMPLoader:
         start=end
         end = start + 3
         R_foot_rpy = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
-        assert end == 1+3+3+6+33+33+3+3+3+3, f"process data, shape mismatch {end}"
+        assert end == 1+3+3+6+self.MODEL_DOF+self.MODEL_DOF+3+3+3+3, f"process data, shape mismatch {end}"
 
         # torch versions of data
         pelv_pos_torch = to_torch(pelv_pos)
@@ -1079,208 +545,6 @@ def transform_vector(euler_angles, vectors):
     # Convert back to numpy arrays
     return transformed_vectors.numpy()
 
-class MotionRetarget():
-
-    JOINT_MAPPING = {
-        'L_HipYaw_Joint': 0, 
-        'L_HipRoll_Joint': 1,
-        'L_HipPitch_Joint': 2,
-        'L_Knee_Joint': 3,
-        'L_AnklePitch_Joint': 4,
-        'L_AnkleRoll_Joint': 5,
-
-        'R_HipYaw_Joint': 6, 
-        'R_HipRoll_Joint': 7,
-        'R_HipPitch_Joint': 8,
-        'R_Knee_Joint': 9,
-        'R_AnklePitch_Joint': 10,
-        'R_AnkleRoll_Joint': 11,
-    }
-
-    def __init__(self, source_model_path: str, target_model_path: str):
-        source = source_model_path
-        target = target_model_path
-        source_bodies, source_joints, source_edges = self.process_model(source)
-        target_bodies, target_joints, target_edges = self.process_model(target)
-        self.source = {
-            'bodies': source_bodies,
-            'joints': source_joints,
-            'edges': source_edges
-        }
-        self.target = {
-            'bodies': target_bodies,
-            'joints': target_joints,
-            'edges': target_edges
-        }
-        print("SOURCE MODEL")
-        self.print_model(self.source)
-        print("TARGET MODEL")
-        self.print_model(self.target)
-
-    def process_model(self, model_path: str):
-        self.source = model_path
-        tree = etree.parse(self.source)
-        root = tree.getroot()
-        joints = {}
-        bodies = {}
-        edges = {}
-
-    # Collect body and joint data
-        for body in root.findall('.//body'):
-            body_name = body.get('name')
-            pos = np.array([float(num) for num in body.get('pos', '0 0 0').split()], dtype=float) # default value is 0, 0, 0
-            quat = np.array([float(num) for num in body.get('quat', '1 0 0 0').split()], dtype=float) # default value is 0, 0, 0
-            if body.find('inertial') is not None: # not a dummy
-                inertial = body.find('inertial')
-                mass = np.array([float(num) for num in inertial.get('mass', '0.').split()], dtype=float) # default value is 0, 0, 0
-                com = np.array([float(num) for num in inertial.get('pos', '0 0 0').split()], dtype=float) # default value is 0, 0, 0
-                inertia = np.array([float(num) for num in inertial.get('fullinertia', '0 0 0 0 0 0').split()], dtype=float) # default value is 0, 0, 0
-            else:
-                mass = None
-                com = None
-                inertia = None
-
-            body_info = {
-                'position': pos,
-                'quat': quat,
-                'mass': mass,
-                'inertia': inertia,
-                'com': com
-            }
-
-            parent = body.getparent()
-            parent_name = parent.get('name')
-            if parent_name is None:
-                parent_name = 'world'
-            
-            if body.find('joint') is not None:
-                for i, joint in enumerate(body.findall('joint')):
-                    assert i == 0, f"Multiple parent link is prohibited, parent link {i} detected."
-                    joint_name = joint.get('name')
-                    joint_pos = np.array([float(num) for num in joint.get('pos', '0 0 0').split()], dtype=float)
-                    joint_axis = np.array([float(num) for num in joint.get('axis', '0 0 1').split()], dtype=float)
-                    joint_type = joint.get('type', 'revolute')
-                    joint_range = np.array([float(num) for num in joint.get('range', '-3.14 3.14').split()], dtype=float)
-                    joint_info = {
-                        'parent' : parent_name,
-                        'child' : body_name,
-                        'position' : joint_pos,
-                        'axis' : joint_axis,
-                        'type' : joint_type,
-                        'range' : joint_range
-                    }
-                    joints[joint_name] = joint_info
-            else: # fixed link
-                joint_name = None             
-            bodies[body_name] = {'parent': parent_name, 'joint': joint_name, 'info' : body_info}
-            if (body_name, parent_name) not in edges:
-                edges[(body_name, parent_name)] = {}
-            if (parent_name, body_name) not in edges:
-                edges[(parent_name, body_name)] = {}
-
-        # process link lengths
-        for body_name, val in bodies.items():
-            pos = val['info']['position']
-            parent_name = val['parent']
-            edges[(body_name, parent_name)]['length'] = np.linalg.norm(pos, ord=2, axis=-1)
-            edges[(parent_name, body_name)]['length'] = np.linalg.norm(pos, ord=2, axis=-1)
-       
-        
-        return bodies, joints, edges
-
-    def print_model(self, model):
-        bodies, joints, edges = model['bodies'], model['joints'], model['edges']
-        print("PRINTING MODEL")
-        print("---------------INFO----------------")
-        for body_name, val in bodies.items():
-            print("Link name : ", body_name)
-            print(val)
-            print("Joint name : ", val['joint'])
-            print(joints[val['joint']]) if val['joint'] is not None else print("None")
-            print("----------------------")
-        print("-------------Link length-----------")
-        for tuple, val in edges.items():
-            print(f"{tuple} : {val}")
-
-    def retarget(self, reference: torch.Tensor) -> torch.Tensor: # outputs retargetted reference
-        length_ratios = {}
-        for key, val in self.target['edges']:
-            length_ratios[key] = val/self.source['edges'][key]
-        source_global_joint_pos = {}
-        source_global_joint_quat = {}
-        source_bodies, source_joints, source_edges = self.source['bodies'], self.source['joints'], self.source['edges']
-        for frame_idx in range(reference.shape[0]):
-            current_reference = reference[frame_idx, :]
-            start = AMPLoader.FRAME_TIME
-            end = start+1
-            reference_time = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.ROOT_POS_SIZE
-            source_global_root_pos = torch.cat((torch.zeros_like(reference[:,start:end]), torch.zeros_like(reference[:,start:end]), reference[:,start:end]), dim=-1)
-            start = end
-            end = start+AMPLoader.ROOT_ROT_SIZE
-            source_global_root_quat = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.LINEAR_VEL_SIZE
-            source_local_base_lin_vel = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.ANGULAR_VEL_SIZE
-            source_local_base_ang_vel = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.JOINT_POS_SIZE
-            source_qpos = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.JOINT_VEL_SIZE
-            source_qvel = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.POS_SIZE
-            source_local_Lfoot_pos = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.POS_SIZE
-            source_local_Rfoot_pos = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.ROT_SIZE
-            source_local_Lfoot_quat = current_reference[start:end]
-            start = end
-            end = start+AMPLoader.ROT_SIZE
-            source_local_Rfoot_quat = current_reference[start:end]
-            assert end == reference.shape[-1], f"Retarget, observation shape do not match. Must be {reference.shape[-1]} but is {end}"
-
-            for body_name, body in source_bodies.items():
-                # joint pos is zero
-                # body pos is not zero
-                # body pos indicates the joint position from parent link pos
-                # first get base global
-
-                # ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1) 
-                # Compute global positions of each joints
-                # bodies[body_name] = {"parent": parent_name, "joint", joint_name, "info": body_info}
-                # body_info = {'position': pos,'quat': quat,'mass': mass,'inertia': inertia,'com': com}
-                # joints[joint_name] = {"parent": parent_name", "child": body_name, "position": 
-                #                       joint_pos, "axis": joint_axis, "type": joint_type, "range": joint_range}
-                parent_name = body['parent']
-                joint_name = body['joint']
-                body_info = body['info']
-                parent_body_info = source_bodies[parent_name]['info']
-                if body_name == "base_link":
-                    source_global_joint_pos[joint_name] = source_global_root_pos + quat_rotate(source_global_root_quat, source_joints[joint_name]['position']) # g_P_j/o = g_P_b/o + g_R_b*b_P_j/b
-                    source_global_joint_quat[joint_name] = body['info']['quat']
-                else:
-                    parent_joint_name = source_bodies[parent_name]['joint']
-                    source_global_joint_pos_parent = source_global_joint_pos[parent_joint_name] # parent's joint's position in global coordinates
-                    source_global_joint_quat_parent = source_global_joint_quat[parent_joint_name] # parent's joint's quaternion in global coordinates (inlcuding rotation due to joint actuation)
-                    source_joint_pose = current_reference[self.JOINT_MAPPING[joint_name]] # joint angle that connects body and its parent
-                    source_global_joint_pos[joint_name] = source_global_joint_pos_parent + quat_rotate(source_global_joint_quat_parent, body_info['position']) # source_global_joint_quat_parent * parent_body_info['position']
-                    source_global_joint_quat[joint_name] = quat_mul(source_global_joint_quat_parent, quat_from_angle_axis(source_joint_pose, source_joints[joint_name]['axis']))
-
-            # 2. Compute relative position vectors between joints and scale them by length ratios
-            
-
-        #TODO
-        # 1. FK to get global positions of each joint (we have global pos/ori of base link)
-        # 2. Compute relative position vectors between joints, and scale them by length ratios
-        # 3. Starting from base link, sum up the relative position vectors and transform back to base frame coordinates
-        # 4. Solve numerical IK from joint positions.
 
 
 ##########HELPER###########

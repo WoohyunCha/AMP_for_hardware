@@ -194,7 +194,7 @@ def export_policy_as_jit(actor_critic, path):
 def export_critic_as_jit(actor_critic, path):
     os.makedirs(path, exist_ok=True)
     path = os.path.join(path, 'critic_1.pt')
-    model = copy.deepcopy(actor_critic.actor).to('cpu')
+    model = copy.deepcopy(actor_critic.critic).to('cpu')
     traced_script_module = torch.jit.script(model)
     traced_script_module.save(path)
 

@@ -1,0 +1,57 @@
+<mujoco model="humanoid">
+    <compiler angle="degree" inertiafromgeom="true"/>
+    <default>
+        <joint armature="1" damping="1" limited="true"/>
+        <geom conaffinity="1" condim="3" friction="0.8 0.1 0.1" contype="1" margin="0.001" material="geom" rgba="0.8 0.6 .4 1"/>
+        <motor ctrllimited="true" ctrlrange="-.4 .4"/>
+    </default>
+    <option integrator="RK4" iterations="50" solver="PGS" timestep="0.003">
+        <!-- <flags solverstat="enable" energy="enable"/>-->
+    </option>
+    <size nkey="5" nuser_geom="1"/>
+    <visual>
+        <map fogend="5" fogstart="3"/>
+    </visual>
+    <worldbody>
+        <body name="base_link" pos="0 0 10">
+            <joint armature="0" damping="0" frictionloss="0" limited="false" name="virtual_joint" stiffness="0" type="free" /> <!--Added WH-->
+			<body name="L_HipRoll_Link" pos="0.052 0.117 -0.102">
+				<joint armature="0.1" damping="0.5" name="L_HipYaw_Joint" axis="0.0 0.94 0.342" stiffness="0.2120002889342212" type="hinge" range="-160.0 20.0" />
+				<body name="L_HipCenter_Link">
+					<joint armature="0.1" damping="0.5" name="L_HipRoll_Joint" axis="0.0 -0.342 0.94" stiffness="0.2120002889342212" type="hinge" range="-70.0 70.0" />
+					<body name="L_Thigh_Link">
+						<joint armature="0.1" damping="0.5" name="L_HipPitch_Joint" axis="1.0 0.0 0.0" pos="-0.0 -0.15 0.413" stiffness="0.2120002889342212" type="hinge" range="-60.0 70.0" />
+						<body name="L_Knee_Link" pos="0.0 0.15 -0.413">
+							<joint armature="0.1" damping="0.5" name="L_Knee_Joint" axis="0.0 0.94 0.342" stiffness="0.19443368002082823" type="hinge" range="-10.0 170.0" />
+							<body name="L_AnkleCenter_Link" pos="0.0 0.154 -0.422">
+								<joint armature="0.1" damping="0.5" name="L_AnklePitch_Joint" axis="-0.0 0.94 0.342" stiffness="73.75002495764812" type="hinge" range="-45.0 90.0" />
+								<body name="L_Foot" pos="0 0 0">
+									<joint armature="0.1" damping="0.5" name="L_AnkleRoll_Joint" axis="0.0 -0.342 0.94" stiffness="73.75002495764812" type="hinge" range="-70.0 20.0" />
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+
+			<body name="R_HipRoll_Link" pos="0.052 -0.121 -0.102">
+				<joint armature="0.1" damping="0.5" name="R_HipYaw_Joint" axis="0.0 0.94 -0.342" stiffness="0.221800441451841" type="hinge" range="-160.0 20.0" />
+				<body name="R_HipCenter_Link">
+					<joint armature="0.1" damping="0.5" name="R_HipRoll_Joint" axis="0.0 0.342 0.94" stiffness="0.221800441451841" type="hinge" range="-70.0 70.0" />
+					<body name="R_Thigh_Link">
+						<joint armature="0.1" damping="0.5" name="R_HipPitch_Joint" axis="1.0 0.0 0.0" stiffness="0.221800441451841" type="hinge" range="-70.0 60.0" />
+						<body name="R_Knee_Link" pos="0.0 -0.149 -0.408">
+							<joint armature="0.1" damping="0.5" name="R_Knee_Joint" axis="0.0 0.94 -0.342" stiffness="0.22557866925216905" type="hinge" range="-10.0 170.0" />
+							<body name="R_AnkleCenter_Link" pos="0.0 -0.148 -0.407">
+								<joint armature="0.1" damping="0.5" name="R_AnklePitch_Joint" axis="0.0 0.94 -0.342" stiffness="49.36562198823347" type="hinge" range="-45.0 90.0" />
+								<body name="R_Foot" pos="0 0 0">
+									<joint armature="0.1" damping="0.5" name="R_AnkleRoll_Joint" axis="0.0 0.342 0.94" stiffness="49.36562198823347" type="hinge" range="-20.0 70.0" />
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+		</body>
+	</worldbody>
+</mujoco>

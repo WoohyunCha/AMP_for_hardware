@@ -1,8 +1,10 @@
 import json
 
 # Define the input and output file paths
-input_file_path = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/walk_1.txt'
+input_file_path = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/retarget_motions/retarget_reference_data.txt'
 output_file_path = '../motions_json/cmu/cmu_walk_1.json'
+# input_file_path = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/scaled/tocabi_data_2_5x.txt'
+# output_file_path = '../motions_json/tocabi/tocabi_data_scaled_2_5x.json'
 
 # Read the input file
 with open(input_file_path, 'r') as file:

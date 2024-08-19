@@ -89,9 +89,11 @@ class LeggedRobot(BaseTask):
             self._custom_init(cfg)
         if self.cfg.env.reference_state_initialization:
             # self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, model_file=self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR))
-            self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt)
-
-
+            if self.cfg.env.reference_model_file is not None:
+                reference_model_file = self.cfg.env.reference_model_file
+            else:
+                reference_model_file = ''
+            self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, model_file=reference_model_file, play=self.cfg.env.play)
 
     def reset(self):
         """ Reset all robots"""

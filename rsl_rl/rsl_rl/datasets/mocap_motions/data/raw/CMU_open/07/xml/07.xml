@@ -1,0 +1,118 @@
+<mujoco model="humanoid">
+    <compiler angle="degree" inertiafromgeom="true"/>
+    <default>
+        <joint armature="1" damping="1" limited="true"/>
+        <geom conaffinity="1" condim="3" friction="0.8 0.1 0.1" contype="1" margin="0.001" material="geom" rgba="0.8 0.6 .4 1"/>
+        <motor ctrllimited="true" ctrlrange="-.4 .4"/>
+    </default>
+    <option integrator="RK4" iterations="50" solver="PGS" timestep="0.003">
+        <!-- <flags solverstat="enable" energy="enable"/>-->
+    </option>
+    <size nkey="5" nuser_geom="1"/>
+    <visual>
+        <map fogend="5" fogstart="3"/>
+    </visual>
+    <worldbody>
+        <body name="base_link" pos="0 0 10">
+            <joint armature="0" damping="0" frictionloss="0" limited="false" name="virtual_joint" stiffness="0" type="free" /> <!--Added WH-->
+			<geom fromto="0 0 0 0 0 0" name="root" size="0.05" type="capsule" />
+			<geom contype="0" pos="0 0 0" name="vis_root" size="0.001" type="sphere" rgba=".2 .5 1 1" />
+			<body name="L_HipRoll_Link" pos="0.057 0.124 -0.116">
+				<joint armature="0.1" damping="0.5" name="L_HipYaw_Joint" axis="0.0 0.94 0.342" stiffness="0.1739707389995719" type="hinge" range="-160.0 20.0" />
+				<body name="L_HipCenter_Link">
+					<joint armature="0.1" damping="0.5" name="L_HipRoll_Joint" axis="0.0 -0.342 0.94" stiffness="0.1739707389995719" type="hinge" range="-70.0 70.0" />
+					<body name="L_Thigh_Link">
+						<joint armature="0.1" damping="0.5" name="L_HipPitch_Joint" axis="1.0 0.0 0.0" stiffness="0.1739707389995719" type="hinge" range="-60.0 70.0" />
+						<body name="L_Knee_Link" pos="0.0 0.158 -0.434">
+							<joint armature="0.1" damping="0.5" name="L_Knee_Joint" axis="0.0 0.94 0.342" stiffness="0.1330280785824309" type="hinge" range="-10.0 170.0" />
+							<body name="L_AnkleCenter_Link" pos="0.0 0.169 -0.464">
+								<joint armature="0.1" damping="0.5" name="L_AnklePitch_Joint" axis="-0.0 0.94 0.342" stiffness="24.996000399968" type="hinge" range="-45.0 90.0" />
+								<body name="L_Foot" pos="0 0 0">
+									<joint armature="0.1" damping="0.5" name="L_AnkleRoll_Joint" axis="0.0 -0.342 0.94" stiffness="24.996000399968" type="hinge" range="-70.0 20.0" />
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+			<body name="R_HipRoll_Link" pos="0.057 -0.112 -0.116">
+				<joint armature="0.1" damping="0.5" name="R_HipYaw_Joint" axis="0.0 0.94 -0.342" stiffness="0.1739707389995719" type="hinge" range="-160.0 20.0" />
+				<body name="R_HipCenter_Link">
+					<joint armature="0.1" damping="0.5" name="R_HipRoll_Joint" axis="0.0 0.342 0.94" stiffness="0.1739707389995719" type="hinge" range="-70.0 70.0" />
+					<body name="R_Thigh_Link">
+						<joint armature="0.1" damping="0.5" name="R_HipPitch_Joint" axis="1.0 0.0 0.0" stiffness="0.1739707389995719" type="hinge" range="-60.0 70.0" />
+						<body name="R_Knee_Link" pos="0.0 -0.163 -0.448">
+							<joint armature="0.1" damping="0.5" name="R_Knee_Joint" axis="0.0 0.94 -0.342" stiffness="0.1330280785824309" type="hinge" range="-10.0 170.0" />
+							<body name="R_AnkleCenter_Link" pos="0.0 -0.163 -0.447">
+								<joint armature="0.1" damping="0.5" name="R_AnklePitch_Joint" axis="0.0 0.94 -0.342" stiffness="24.996000399968" type="hinge" range="-45.0 90.0" />
+								<body name="R_Foot" pos="0 0 0">
+									<joint armature="0.1" damping="0.5" name="R_AnkleRoll_Joint" axis="0.0 0.342 0.94" stiffness="24.996000399968" type="hinge" range="-70.0 20.0" />
+								</body>
+							</body>
+						</body>
+					</body>
+				</body>
+			</body>
+		</body>
+	</worldbody>
+    <tendon>
+    </tendon>
+    <actuator><!-- this section is not supported, same constants in code -->
+		<motor gear="100" joint="lfemur_x" name="lfemur_x"/>
+		<motor gear="100" joint="lfemur_y" name="lfemur_y"/>
+		<motor gear="100" joint="lfemur_z" name="lfemur_z"/>
+		<motor gear="100" joint="ltibia_x" name="ltibia_x"/>
+		<motor gear="100" joint="lfoot_x" name="lfoot_x"/>
+		<motor gear="100" joint="lfoot_z" name="lfoot_z"/>
+		<motor gear="100" joint="ltoes_x" name="ltoes_x"/>
+		<motor gear="100" joint="rfemur_x" name="rfemur_x"/>
+		<motor gear="100" joint="rfemur_y" name="rfemur_y"/>
+		<motor gear="100" joint="rfemur_z" name="rfemur_z"/>
+		<motor gear="100" joint="rtibia_x" name="rtibia_x"/>
+		<motor gear="100" joint="rfoot_x" name="rfoot_x"/>
+		<motor gear="100" joint="rfoot_z" name="rfoot_z"/>
+		<motor gear="100" joint="rtoes_x" name="rtoes_x"/>
+		<motor gear="100" joint="lowerback_x" name="lowerback_x"/>
+		<motor gear="100" joint="lowerback_y" name="lowerback_y"/>
+		<motor gear="100" joint="lowerback_z" name="lowerback_z"/>
+		<motor gear="100" joint="upperback_x" name="upperback_x"/>
+		<motor gear="100" joint="upperback_y" name="upperback_y"/>
+		<motor gear="100" joint="upperback_z" name="upperback_z"/>
+		<motor gear="100" joint="thorax_x" name="thorax_x"/>
+		<motor gear="100" joint="thorax_y" name="thorax_y"/>
+		<motor gear="100" joint="thorax_z" name="thorax_z"/>
+		<motor gear="100" joint="lowerneck_x" name="lowerneck_x"/>
+		<motor gear="100" joint="lowerneck_y" name="lowerneck_y"/>
+		<motor gear="100" joint="lowerneck_z" name="lowerneck_z"/>
+		<motor gear="100" joint="upperneck_x" name="upperneck_x"/>
+		<motor gear="100" joint="upperneck_y" name="upperneck_y"/>
+		<motor gear="100" joint="upperneck_z" name="upperneck_z"/>
+		<motor gear="100" joint="head_x" name="head_x"/>
+		<motor gear="100" joint="head_y" name="head_y"/>
+		<motor gear="100" joint="head_z" name="head_z"/>
+		<motor gear="100" joint="lclavicle_y" name="lclavicle_y"/>
+		<motor gear="100" joint="lclavicle_z" name="lclavicle_z"/>
+		<motor gear="100" joint="lhumerus_x" name="lhumerus_x"/>
+		<motor gear="100" joint="lhumerus_y" name="lhumerus_y"/>
+		<motor gear="100" joint="lhumerus_z" name="lhumerus_z"/>
+		<motor gear="100" joint="lradius_x" name="lradius_x"/>
+		<motor gear="100" joint="lwrist_y" name="lwrist_y"/>
+		<motor gear="100" joint="lhand_x" name="lhand_x"/>
+		<motor gear="100" joint="lhand_z" name="lhand_z"/>
+		<motor gear="100" joint="lfingers_x" name="lfingers_x"/>
+		<motor gear="100" joint="lthumb_x" name="lthumb_x"/>
+		<motor gear="100" joint="lthumb_z" name="lthumb_z"/>
+		<motor gear="100" joint="rclavicle_y" name="rclavicle_y"/>
+		<motor gear="100" joint="rclavicle_z" name="rclavicle_z"/>
+		<motor gear="100" joint="rhumerus_x" name="rhumerus_x"/>
+		<motor gear="100" joint="rhumerus_y" name="rhumerus_y"/>
+		<motor gear="100" joint="rhumerus_z" name="rhumerus_z"/>
+		<motor gear="100" joint="rradius_x" name="rradius_x"/>
+		<motor gear="100" joint="rwrist_y" name="rwrist_y"/>
+		<motor gear="100" joint="rhand_x" name="rhand_x"/>
+		<motor gear="100" joint="rhand_z" name="rhand_z"/>
+		<motor gear="100" joint="rfingers_x" name="rfingers_x"/>
+		<motor gear="100" joint="rthumb_x" name="rthumb_x"/>
+		<motor gear="100" joint="rthumb_z" name="rthumb_z"/>
+    </actuator>
+</mujoco>

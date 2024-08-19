@@ -1,7 +1,7 @@
 % Define the file path
 filename = '../data/scaled/tocabi_data0.9_scaled.txt';
 
-speedup = 4;
+speedup = 2.5;
 
 % Open the file for reading
 fileID = fopen(filename, 'r');
@@ -22,7 +22,7 @@ dataMatrix2(:, start:start+32) = dataMatrix(:, start:start+32) * speedup;
 
 
 % Define the output file name (can be the same or different)
-outputFilename = '../data/scaled/tocabi_data_4x.txt';
+outputFilename = '../data/scaled/tocabi_data_2_5x.txt';
 
 % Open the file for writing
 fileID = fopen(outputFilename, 'w');

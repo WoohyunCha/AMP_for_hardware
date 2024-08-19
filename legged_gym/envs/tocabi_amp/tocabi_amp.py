@@ -57,7 +57,6 @@ class TOCABIAMP(LeggedRobot):
         self.reference_state_initialization_prob = cfg.env.reference_state_initialization_prob
         self.normalizer_obs = None
         self.control_ticks = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
-        self.universal_tick = 0
         if cfg.normalization.normalize_observation:
             self.normalizer_obs = Normalizer_obs(self.num_privileged_obs)
 
@@ -108,10 +107,27 @@ class TOCABIAMP(LeggedRobot):
             policy_obs = self.obs_buf
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
-        
-        self.universal_tick += 1
 
         return policy_obs, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states
+    
+    def step_forced(self, joint_states: torch.Tensor):
+        self.render()
+        self.reset()
+        upper_body_pos = self.default_dof_pos.squeeze()[self.num_actions:].reshape(-1,1)
+        upper_body_vel = torch.zeros_like(upper_body_pos)
+        upper_body = torch.cat((upper_body_pos, upper_body_vel), dim=-1)
+        lower_body_pos = joint_states[:self.num_actions].view(-1,1)
+        lower_body_vel = joint_states[self.num_actions:].view(-1,1)
+        lower_body = torch.cat((lower_body_pos, lower_body_vel), dim=-1)
+        joint_angles = torch.tile(torch.cat((lower_body, upper_body), dim=0), (self.num_envs, 1))
+        self.gym.set_dof_state_tensor(self.sim,
+                                               gymtorch.unwrap_tensor(joint_angles))
+        self.gym.simulate(self.sim)
+        if self.device == 'cpu':
+            self.gym.fetch_results(self.sim, True)
+        if self.viewer and self.enable_viewer_sync and self.debug_viz:
+            self._draw_debug_vis()
+
 
     def get_observations(self):
         if self.cfg.env.include_history_steps is not None:
@@ -166,7 +182,6 @@ class TOCABIAMP(LeggedRobot):
         self.height_buf = self.root_states[:, 2] < self.termination_height[0]
         self.height_buf |= self.root_states[:,2] > self.termination_height[1]
         self.reset_buf |= self.height_buf
-
 
     def reset_idx(self, env_ids):
         """ Reset some environments.
@@ -274,6 +289,15 @@ class TOCABIAMP(LeggedRobot):
                                     self.commands[:, :3] * self.commands_scale,
                                     (self.dof_pos[:, :self.num_actions] - self.default_dof_pos[:, :self.num_actions]) * self.obs_scales.dof_pos,
                                     self.dof_vel[:, :self.num_actions] * self.obs_scales.dof_vel,
+                                    self.actions
+                                    ),dim=-1)
+        self.privileged_obs_buf = torch.cat((  
+                                    self.base_lin_vel,
+                                    self.base_ang_vel,
+                                    self.projected_gravity,
+                                    self.commands[:, :3],
+                                    (self.dof_pos[:, :self.num_actions] - self.default_dof_pos[:, :self.num_actions]),
+                                    self.dof_vel[:, :self.num_actions],
                                     self.actions
                                     ),dim=-1)
         
@@ -781,7 +805,7 @@ class TOCABIAMP(LeggedRobot):
         # The jacobian maps joint velocities (num_dofs + 6) to spatial velocities of CoM frame of each link in global frame
         # https://nvidia-omniverse.github.io/PhysX/physx/5.1.0/docs/Articulations.html#jacobian
 
-        self.rb_states = gymtorch.wrap_tensor(_rb_states).view(self.num_envs, self.num_bodies, 13) # Retrieves buffer for Rigid body states. The buffer has shape (num_rigid_bodies, 13). State for each rigid body contains position([0:3]), rotation([3:7]), linear velocity([7:10]), and angular velocity([10:13]).
+        self.rb_states = gymtorch.wrap_tensor(_rb_states).view(self.num_envs, self.num_bodies, 13)
         self.rb_inertia = gymtorch.torch.zeros((self.num_envs, self.num_bodies, 3, 3), device=self.device) # [Ix, Iy, Iz]
         self.rb_mass = gymtorch.torch.zeros((self.num_envs, self.num_bodies), device=self.device) # link mass
         self.rb_com = gymtorch.torch.zeros((self.num_envs, self.num_bodies, 3), device = self.device) # [comX, comY, comZ] in link's origin frame 
@@ -825,14 +849,6 @@ class TOCABIAMP(LeggedRobot):
 
         return torch.concat((Lfoot_positions_local, Rfoot_positions_local), dim=-1)
     
-    def foot_positions_in_global_frame(self):
-
-        feet_indices = self.feet_indices
-        feet_states = self.rb_states[:, feet_indices, :]
-        assert feet_states.shape == (self.num_envs, 2, 13), f"feet state shape is {feet_states.shape}"
-
-        return torch.concat((feet_states[:, 0, :3], feet_states[:, 1, :3]), dim=-1)        
-
     def foot_rotations_in_base_frame(self):
         feet_indices = self.feet_indices
         feet_states = self.rb_states[:, feet_indices, :]

@@ -110,7 +110,7 @@ class AMPDiscriminator(nn.Module):
     def compute_grad_pen(self,
                          expert_state,
                          expert_next_state,
-                         lambda_=10):
+                         lambda_=2):
         expert_data = torch.cat([expert_state, expert_next_state], dim=-1)
         expert_data.requires_grad = True
 

@@ -57,7 +57,7 @@ class AMPOnPolicyRunner:
                  env: VecEnv,
                  train_cfg,
                  log_dir=None,
-                 device='cpu'):
+                 device='cpu', play=False):
 
 
         self.cfg=train_cfg["runner"]
@@ -79,10 +79,16 @@ class AMPOnPolicyRunner:
                                                         num_actions=self.env.num_actions,
                                                         **self.policy_cfg).to(self.device)
 
+        if self.cfg["amp_reference_model"] is not None:
+            reference_model_file = self.cfg["amp_reference_model"]
+        else:
+            reference_model_file = ''
         amp_data = AMPLoader(
             device, time_between_frames=self.env.dt, preload_transitions=True,
             num_preload_transitions=train_cfg['runner']['amp_num_preload_transitions'], 
-            motion_files=self.cfg["amp_motion_files"])
+            motion_files=self.cfg["amp_motion_files"],
+            model_file= reference_model_file, play=play
+            )
         print("AMP data observation data size : ", amp_data.observation_dim)
         amp_normalizer = Normalizer(amp_data.observation_dim) # batchnorm. Updates its running averages (mean, std) of observations from batches of observations, and normalizes observations using them
         if self.cfg['wgan']:
@@ -141,6 +147,8 @@ class AMPOnPolicyRunner:
             wandb.save('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/algorithms/amp_discriminator.py', policy="now")
 
             wandb.save('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/algorithms/amp_ppo.py', policy="now")
+
+            wandb.save('/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml', policy="now")
 
         _, _ = self.env.reset()
     
