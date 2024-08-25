@@ -466,7 +466,7 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         run_name = ''
         experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
         # algorithm_class_name = 'AMPPPOSym'
-        algorithm_class_name = 'AMPPPO'
+        algorithm_class_name = 'AMPPPOSym'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
         max_iterations = 20000 # number of policy updates
