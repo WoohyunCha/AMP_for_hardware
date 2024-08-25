@@ -89,11 +89,7 @@ class LeggedRobot(BaseTask):
             self._custom_init(cfg)
         if self.cfg.env.reference_state_initialization:
             # self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, model_file=self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR))
-            if self.cfg.env.reference_model_file is not None:
-                reference_model_file = self.cfg.env.reference_model_file
-            else:
-                reference_model_file = ''
-            self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, model_file=reference_model_file, play=self.cfg.env.play)
+            self.amp_loader = AMPLoader(reference_dict=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, play=self.cfg.env.play)
 
     def reset(self):
         """ Reset all robots"""
@@ -990,7 +986,7 @@ class LeggedRobot(BaseTask):
     def _reward_base_height(self):
         # Penalize base height away from target
         base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-        return torch.square(base_height - self.cfg.rewards.base_height_target)
+        return torch.exp(-10.0*torch.square(base_height - self.cfg.rewards.base_height_target))
     
     def _reward_torques(self):
         # Penalize torques
@@ -1034,6 +1030,12 @@ class LeggedRobot(BaseTask):
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        # _rew_lin_vel_x = 0.6 * torch.exp(-3.0 *torch.square(self.commands[:, 0] - self.base_lin_vel[:, 0]))
+        # _rew_lin_vel_y = 0.2 * torch.exp(-3.0 *torch.square(self.commands[:, 1] - self.base_lin_vel[:, 1]))
+        # print("reward calc og : ", torch.exp(-lin_vel_error*3))
+        # print("reward calc og bad : ", torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma))
+        # print("reward calc : ", _rew_lin_vel_x)
+        # return _rew_lin_vel_x+_rew_lin_vel_y
         return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)
     
     def _reward_tracking_ang_vel(self):

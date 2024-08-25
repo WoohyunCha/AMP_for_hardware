@@ -13,14 +13,20 @@ from rsl_rl.datasets import pose3d
 from rsl_rl.datasets import motion_util
 from isaacgym.torch_utils import *
 from rsl_rl.datasets.mocap_motions.data.raw.CMU_open.CMU_parser import MotionRetarget
+from scipy.signal import savgol_filter
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROCESSED_DATA_DIR = os.path.join(BASE_DIR, 'mocap_motions', 'AMP_trajectories')
 MJCF_file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml'
 
+
+
 class AMPLoader:
     FRAME_TIME = 0
-    MODEL_DOF = 12
+    MODEL_DOF = 33
+    REFERENCE_START_INDEX = None
+    REFERENCE_END_INDEX = None
+
 
     POS_SIZE = 3
     JOINT_POS_SIZE = 12
@@ -55,7 +61,7 @@ class AMPLoader:
     FOOT_POS_END_IDX = FOOT_POS_START_IDX + 2*POS_SIZE
 
 
-    # HZ = 2000
+    HZ = None
     # # REFERENCE_START_INDEX = [int(5.6*HZ), int(4.4*HZ)]
     # # REFERENCE_END_INDEX = [int(7.4005*HZ), int(5.6005*HZ)]
     # # REFERENCE_START_INDEX = int(2.*HZ)
@@ -65,11 +71,11 @@ class AMPLoader:
 
 
     #CMU
-    HZ = 120
-    REFERENCE_START_INDEX = int(0.*HZ)
-    REFERENCE_END_INDEX = int(2.0*HZ)
+    # HZ = 120
+    # REFERENCE_START_INDEX = int(0.*HZ)
+    # REFERENCE_END_INDEX = int(3.0*HZ)
 
-    BASE_PELVIS_OFFSET = (0., 0., 0.)
+
 
     def __init__(
             self,
@@ -77,9 +83,7 @@ class AMPLoader:
             time_between_frames,
             preload_transitions=False,
             num_preload_transitions=1000000,
-            motion_files=glob.glob('datasets/motion_files2/*'),
-            model_file='', play=False, iterations=3000,
-            reference_start_time = None, reference_end_time = None
+            reference_dict={}, play=False, iterations=3000,
             ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
@@ -96,10 +100,18 @@ class AMPLoader:
         self.trajectory_weights = []
         self.trajectory_frame_durations = []
         self.trajectory_num_frames = []
-        if reference_start_time is not None and reference_end_time is not None:
-            self.REFERENCE_START_INDEX = int(reference_start_time * self.HZ)
-            self.REFERENCE_END_INDEX = int(reference_end_time * self.HZ)
-        for i, motion_file in enumerate(motion_files):
+        for i, (jsonf, info) in enumerate(reference_dict.items()):
+            motion_file = jsonf
+            model_file = info['xml']
+            hz = info['hz']
+            reference_start_index = int(hz * info['start_time'])
+            reference_end_index = int(hz * info['end_time'])
+            AMPLoader.MODEL_DOF = info['model_dof']
+            AMPLoader.REFERENCE_START_INDEX = int(reference_start_index)
+            AMPLoader.REFERENCE_END_INDEX = int(reference_end_index)
+            AMPLoader.HZ = hz
+            
+            print(motion_file)
             self.trajectory_names.append(motion_file.split('.')[0])
             with open(motion_file, "r") as f:
                 motion_json = json.load(f)
@@ -124,7 +136,7 @@ class AMPLoader:
                 else:
                     print("RETARGET REFERENCE MOTIONS")
                     print("Source file : ", MJCF_file)
-                    print("Target file : ", model_file)
+                    print("Target file : ", info['xml'])
                     motion_retarget = MotionRetarget(source_model_path=model_file, target_model_path=MJCF_file) # model_file is the source
                     processed_data_full, _ = motion_retarget.retarget(motion_data, play, iterations)
                     processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
@@ -141,11 +153,11 @@ class AMPLoader:
                     float(motion_json["MotionWeight"]))
                 frame_duration = float(motion_data[1,AMPLoader.FRAME_TIME] - motion_data[0,AMPLoader.FRAME_TIME])
                 self.trajectory_frame_durations.append(frame_duration)
-                traj_len = (AMPLoader.REFERENCE_END_INDEX-AMPLoader.REFERENCE_START_INDEX - 1) * frame_duration
+                traj_len = (reference_end_index-reference_start_index - 1) * frame_duration
                 # traj_len = (motion_data.shape[0] - 1) * frame_duration
                 self.trajectory_lens.append(traj_len)
                 # self.trajectory_num_frames.append(float(motion_data.shape[0]))
-                self.trajectory_num_frames.append(float(AMPLoader.REFERENCE_END_INDEX-AMPLoader.REFERENCE_START_INDEX))
+                self.trajectory_num_frames.append(float(reference_end_index - reference_start_index))
 
             print(f"Loaded {traj_len}s. motion from {motion_file}.")
             print(f"Size of Reference Observation : {self.observation_dim}")
@@ -420,9 +432,8 @@ class AMPLoader:
     def get_foot_pos_batch(poses):
         return poses[:, AMPLoader.FOOT_POS_START_IDX:AMPLoader.FOOT_POS_END_IDX]
 
-
-
     def process_data(self, traj: np.ndarray, index: int):# Process raw data from Mujoco
+        traj = denoise(traj, window_length=int(0.2*AMPLoader.HZ), polyorder=2)
         time = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX,0]
         pelv_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 1:4]
         pelv_rpy = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 4:7] # roll, pitch, yaw order
@@ -460,10 +471,7 @@ class AMPLoader:
         pelvis_pitch = pelv_rpy[:, 1]
         pelvis_roll = pelv_rpy[:, 0]
         pelvis_quat = quat_from_euler_xyz(to_torch(pelvis_roll), to_torch(pelvis_pitch), to_torch(pelvis_yaw)) # tensor
-        offset = np.array(self.BASE_PELVIS_OFFSET, dtype=float) # Pelvis is higher than base, in local frame
-        global_offset = quat_rotate(pelvis_quat, to_torch(offset).repeat((pelvis_quat.shape[0], 1)))
-        assert global_offset.shape == (pelv_rpy.shape[0], 3), f"global offset shape is {global_offset.shape}"
-        base_pos_global_torch = pelv_pos_torch - global_offset
+        base_pos_global_torch = pelv_pos_torch
 
         # Create AMP observation
         base_height = base_pos_global_torch[:, 2]
@@ -559,3 +567,7 @@ def normalize(x: np.ndarray, eps: float = 1e-9):
 
 def quat_unit(a):
     return normalize(a)
+
+def denoise(data, window_length=5, polyorder=2):
+    print("DENOISING!!")
+    return savgol_filter(data, window_length=window_length, polyorder=polyorder, axis=0)

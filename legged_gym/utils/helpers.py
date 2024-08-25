@@ -205,7 +205,12 @@ def export_normalizer_as_jit(normalizer: torch.nn.Module, path):
     traced_script_module = torch.jit.script(model)
     traced_script_module.save(path)
 
-
+def export_encoder_as_jit(actor_critic, path):
+    os.makedirs(path, exist_ok=True)
+    path = os.path.join(path, 'encoder_1.pt')
+    model = copy.deepcopy(actor_critic.encoder).to('cpu')
+    traced_script_module = torch.jit.script(model)
+    traced_script_module.save(path)
 
 class PolicyExporterLSTM(torch.nn.Module):
     def __init__(self, actor_critic):

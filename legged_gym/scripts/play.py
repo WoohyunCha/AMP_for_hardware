@@ -33,11 +33,10 @@ import os
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import get_args, export_policy_as_jit, export_critic_as_jit, export_normalizer_as_jit, task_registry, Logger
+from legged_gym.utils import get_args, export_policy_as_jit, export_critic_as_jit, export_normalizer_as_jit, get_load_path, task_registry, Logger, export_encoder_as_jit
 
 import numpy as np
 import torch
-
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
@@ -58,24 +57,29 @@ def play(args):
         env_cfg.commands.ranges.lin_vel_y = [0., 0.]
         env_cfg.commands.ranges.heading = [0.,0.]
     train_cfg.runner.amp_num_preload_transitions = 100
+    encoder_dim = train_cfg.policy.encoder_dim
     env_cfg.env.play = True
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
-    # load policy
+    
     train_cfg.runner.resume = True
     train_cfg.runner.LOG_WANDB = False
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg, play=True)
     policy = ppo_runner.get_inference_policy(device=env.device)
-    ppo_runner.env.set_normalizer_eval()    
+    ppo_runner.env.set_normalizer_eval()   
     _, _ = env.reset()
     obs = env.get_observations()
+    if encoder_dim is not None:
+        long_history = env.get_long_history()
 
     # export policy as a jit module (used to run it from C++)
     if EXPORT_POLICY:
         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
         export_critic_as_jit(ppo_runner.alg.actor_critic, path)
+        if encoder_dim is not None:
+            export_encoder_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
         if ppo_runner.env.normalizer_obs is not None:
             export_normalizer_as_jit(ppo_runner.env.normalizer_obs, path)
@@ -97,8 +101,14 @@ def play(args):
         # if normalizer is not None:
         #     obs = normalizer(obs)
         #     print("after normalize : ", obs)
-        actions = policy(obs.detach())
-        obs, _, rews, dones, infos, _, _ = env.step(actions.detach())
+        if encoder_dim is not None:
+            actions = policy(obs.detach(), long_history.detach())
+            obs, _, rews, dones, infos, _, _, long_history = env.step(actions.detach())
+        else:
+            actions = policy(obs.detach())
+            obs, _, rews, dones, infos, _, _ = env.step(actions.detach())
+        # compute mirror loss
+        # print("mirror loss : ", ppo_runner.alg.get_mirror_loss(obs.detach(), actions.detach(), long_history.detach()))
         if RECORD_FRAMES:
             if i % 2:
                 filename = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'frames', f"{img_idx}.png")

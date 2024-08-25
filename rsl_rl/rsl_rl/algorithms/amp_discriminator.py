@@ -110,7 +110,7 @@ class AMPDiscriminator(nn.Module):
     def compute_grad_pen(self,
                          expert_state,
                          expert_next_state,
-                         lambda_=2):
+                         lambda_=10):
         expert_data = torch.cat([expert_state, expert_next_state], dim=-1)
         expert_data.requires_grad = True
 
@@ -122,7 +122,8 @@ class AMPDiscriminator(nn.Module):
             retain_graph=True, only_inputs=True)[0] # the index [0] indicates gradient w.r.t. the first input. For multiple inputs, use inputs=[input1, input2]
 
         # Enforce that the grad norm approaches 0.
-        grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean() / 2
+        grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        # grad_pen = lambda_ * torch.sum(torch.square(grad), dim=-1).mean()
         return grad_pen
 
     def predict_amp_reward(
@@ -135,6 +136,8 @@ class AMPDiscriminator(nn.Module):
 
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
             reward = self.amp_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
+            # print(f"amp reward : {reward}")
+            # print(f"task reward : {task_reward}")
             amp_reward = reward
             if self.task_reward_lerp > 0:
                 reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))

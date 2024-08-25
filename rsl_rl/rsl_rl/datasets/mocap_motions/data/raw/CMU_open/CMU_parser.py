@@ -47,11 +47,16 @@ COMMON ERROR
 # ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/asf/91.asf' # Path to your skeleton ASF file
 # AMC_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/amc/straight_walk.amc'
 # XML_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/91.xml' # Path of the converted source XML file
-ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/asf/07.asf' # Path to your skeleton ASF file
-AMC_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/amc/walk_1.amc'
-XML_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml' # Path of the converted source XML file
+
+# ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/asf/07.asf' # Path to your skeleton ASF file
+# AMC_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/amc/walk_1.amc'
+# XML_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml' # Path of the converted source XML file
+
+ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/69/asf/69.asf' # Path to your skeleton ASF file
+AMC_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/69/amc/walk_forward_01.amc'
+XML_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/69/xml/69.xml' # Path of the converted source XML file
 TARGET_XML_FILE = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml'
-TXT_FILE = os.path.splitext(os.path.basename(AMC_FILE))[0]+'.txt'
+TXT_FILE = os.path.join('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open',os.path.splitext(os.path.basename(ASF_FILE))[0], 'txt', os.path.splitext(os.path.basename(AMC_FILE))[0]+'.txt')
 JSON_FILE = os.path.join('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/', os.path.splitext(os.path.basename(ASF_FILE))[0], os.path.splitext(os.path.basename(ASF_FILE))[0] + '_' + os.path.splitext(os.path.basename(AMC_FILE))[0]+'.json')
 RETARGET_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/retarget_motions/retarget_reference_data.txt'
 HZ = 120
@@ -450,7 +455,7 @@ def denoise(data, window_length=5, polyorder=2):
     return savgol_filter(data, window_length=window_length, polyorder=polyorder, axis=0)
 
 def process_data(traj: np.ndarray):# Process raw data from Mujoco
-    traj = denoise(traj, window_length=10, polyorder=2)
+    traj = denoise(traj, window_length=20, polyorder=2)
     time = traj[:,0]
     pelv_pos = traj[:, 1:4]
     pelv_rpy = traj[:, 4:7] # roll, pitch, yaw order
@@ -911,12 +916,13 @@ class MotionRetarget():
                 joint_quat_local_retarget[:, 4*(self.JOINT_MAPPING[joint_name]-7):4*(self.JOINT_MAPPING[joint_name]-6)] = target_local_joint_quat[joint_name]
 
         # # 4. Solve numerical IK from joint positions, foot positions and orientation
-        weight_joint_pos, weight_foot_quat, weight_joint_pose, weight_hip_pose = 1.2, .1, .1, .5
+        weight_joint_pos, weight_foot_quat, weight_joint_pose, weight_hip_pose, weight_joint_vel = 1.2, .1, .1, .5, .1
         weight_norm = (weight_joint_pos+weight_foot_quat+weight_joint_pose+weight_hip_pose)
         weight_joint_pos /= weight_norm
         weight_foot_quat /= weight_norm
         weight_joint_pose/= weight_norm
         weight_hip_pose/= weight_norm
+        weight_joint_vel /= weight_norm
 
         def cost_function(x):
             # x = [q for each joints] -> shape of 12
@@ -958,7 +964,7 @@ class MotionRetarget():
             cosine_loss = torch.nn.CosineSimilarity(dim=-1)
             foot_quat_cost = (1 - cosine_loss(zero_quat, x_Lfoot_quat)).mean() + (1 - cosine_loss(zero_quat, x_Rfoot_quat)).mean()
 
-            total_cost = weight_joint_pos*joint_pos_cost + weight_joint_pose*joint_pose_cost + weight_foot_quat*foot_quat_cost + weight_hip_pose*hip_pose_cost
+            total_cost = weight_joint_pos*joint_pos_cost + weight_joint_pose*joint_pose_cost + weight_foot_quat*foot_quat_cost + weight_hip_pose*hip_pose_cost + weight_joint_vel*joint_vel_cost
             return torch.sum(total_cost), joint_pos_cost, joint_pose_cost, (1 - cosine_loss(zero_quat, x_Lfoot_quat)).mean(), (1 - cosine_loss(zero_quat, x_Rfoot_quat)).mean()
         
         n_iterations = iterations #TODO
