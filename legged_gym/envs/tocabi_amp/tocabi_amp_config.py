@@ -33,11 +33,76 @@ from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobot
 
 # MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/*.json')
 # MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/91/*.json')
-MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/*.json')
+# MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/*.json')
 # MOTION_FILES = glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/tocabi_data_scaled_1_0x.json')
-REFERENCE_MODEL = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml'
+# REFERENCE_MODEL = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml'
 # REFERENCE_MODEL = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/91.xml'
 # REFERENCE_MODEL = None
+REFERENCE_DICT = {
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_0_5x.json': {
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+    #     'hz' : 2000,
+    #     'start_time' : 4.5,
+    #     'end_time' : 8.1,
+    #     'model_dof' : 33
+    # },
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_0_7x.json': {
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+    #     'hz' : 2000,
+    #     'start_time' : 4.5,
+    #     'end_time' : 8.1,
+    #     'model_dof' : 33
+    # },
+    '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json': {
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+        'hz' : 2000,
+        'start_time' : 4.5,
+        'end_time' : 8.1,
+        'model_dof' : 33
+    },
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_2x.json': {
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+    #     'hz' : 2000,
+    #     'start_time' : 4.5,
+    #     'end_time' : 8.1,
+    #     'model_dof' : 33
+    # },
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_5x.json': {
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+    #     'hz' : 2000,
+    #     'start_time' : 4.5,
+    #     'end_time' : 8.1,
+    #     'model_dof' : 33
+    # },
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_2x.json': {
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+    #     'hz' : 2000,
+    #     'start_time' : 4.5,
+    #     'end_time' : 8.1,
+    #     'model_dof' : 33
+    # },
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/91/91_slow_walk.json' :{
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/91.xml',
+    #     'hz' : 120,
+    #     'start_time' : 5.,
+    #     'end_time' : 8.6,
+    #     'model_dof' : 12
+    # } ,
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_walk_1.json' :{
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml',
+    #     'hz' : 120,
+    #     'start_time' : 0.,
+    #     'end_time' : 2.6,
+    #     'model_dof' : 12
+    # },
+    # '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_slow_walk_1.json' :{
+    #     'xml': '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml',
+    #     'hz' : 120,
+    #     'start_time' : 0.,
+    #     'end_time' : 3.6,
+    #     'model_dof' : 12
+    # },
+}
 
 class TOCABIAMPCfg( LeggedRobotCfg ):
 
@@ -49,10 +114,9 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         num_privileged_obs = 48
         reference_state_initialization = True
         reference_state_initialization_prob = 1.
-        amp_motion_files = MOTION_FILES
-        episode_length_s = 20 # episode length in seconds
+        amp_motion_files = REFERENCE_DICT
+        episode_length_s = 10 # episode length in seconds
         num_actions = 12
-        reference_model_file = REFERENCE_MODEL
         play = False
 
     class init_state( LeggedRobotCfg.init_state ):
@@ -166,7 +230,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
 
 
-            "Neck_Joint": 100.0, "Head_Joint": 100.0,            
+            "Neck_Joint": 2000.0, "Head_Joint": 2000.0,            
 
 
 
@@ -208,7 +272,8 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
         # decimation: Number of control action updates @ sim DT per policy DT
 
-        decimation = 2 # TODO this was 6
+        decimation = 4 # TODO this was 6
+        # decimation = 2 # TODO this was 6
 
 
 
@@ -246,25 +311,26 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         # fix_base_link = True
           
     class domain_rand:
-        randomize_friction = False
+        randomize_friction = True
         friction_range = [0.8, 1.2]
-        randomize_base_mass = False
-        added_mass_range = [-5., 5.]
-        push_robots = False
-        push_interval_s = 15
-        max_push_vel_xy = 0.3
+        randomize_base_mass = True
+        added_mass_range = [.98, 1.02]
+        push_robots =False
+        push_interval_s = 5
+        max_push_vel_xy = 0.2
+        randomize_torque = True
+        torque_constant_range = 0.04
+        randomize_joints = True
+        damping_range = [0., 4.]
+        armature_range = [0.8, 1.2]
+
         randomize_gains = False
         stiffness_multiplier_range = [0.9, 1.1]
         damping_multiplier_range = [0.9, 1.1]
-        randomize_torque = False
-        torque_constant = [0.98, 1.02]
-        randomize_joints = False
-        damping_range = [0., 2.]
-        armature_range = [0.8, 1.2]
 
     class noise:
         add_noise = True
-        noise_level = .0003
+        noise_level = .001
         noise_dist = 'uniform' # gaussian
         class noise_scales:
             dof_pos = 1
@@ -276,19 +342,19 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
-        base_height_target = 0.25
-        tracking_sigma = 0.1
+        base_height_target = 0.82
+        # tracking_sigma = 0.1
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
-            tracking_lin_vel = 50
-            tracking_ang_vel = 25
+            tracking_lin_vel = 1.5 # 0.6
+            tracking_ang_vel = 0.5 # 0.2
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
             torques = 0.0
             dof_vel = 0.0
             dof_acc = 0.0
-            base_height = 0.0 
+            base_height = 0.0
             feet_air_time =  0.0
             collision = 0.0
             feet_stumble = 0.0 
@@ -308,8 +374,8 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         normalize_observation = True # True means we keep running estimates of mean and variance to normalize the observation vector
 
     class commands:
-        curriculum = False
-        max_curriculum = 2.
+        curriculum = True
+        max_curriculum = 1.
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
@@ -379,31 +445,65 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
 
         # rnn_num_layers = 1
 
+        encoder_dim = None #16
+        encoder_history_steps = 50
+        encoder_skips = 5
+        input_dim = TOCABIAMPCfg.env.num_observations
+
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        value_loss_coef = .5
+        value_loss_coef = 1. #.5
         entropy_coef = 0.01
         amp_replay_buffer_size = 100000
         num_learning_epochs = 5
         num_mini_batches = 4
-        disc_coef = 5
+        disc_coef = 1
         bounds_loss_coef = 10
-        disc_grad_pen = 0.1
-        learning_rate = 2.e-5
+        disc_grad_pen = 5.
+        learning_rate = 3.e-5
+
 
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
         experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
+        # algorithm_class_name = 'AMPPPOSym'
         algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
+        # policy_class_name = 'ActorCriticEncoder' 
         max_iterations = 20000 # number of policy updates
+        num_steps_per_env = 24 # per iteration, 32 in isaacgymenvs
 
         amp_reward_coef = 2.0
-        amp_motion_files = MOTION_FILES
+        amp_motion_files = REFERENCE_DICT
         amp_num_preload_transitions = 2000000
-        amp_task_reward_lerp = 0.5
+        amp_task_reward_lerp = 0.3
         amp_discr_hidden_dims = [256, 256]
-        amp_reference_model = REFERENCE_MODEL
 
         min_normalized_std = [0.05, 0.02, 0.05] * 4
-        LOG_WANDB = True
+        LOG_WANDB = False
         wgan = False
+
+if TOCABIAMPCfgPPO.runner.algorithm_class_name == 'AMPPPOSym':
+    TOCABIAMPCfgPPO.algorithm.include_history_steps = TOCABIAMPCfg.env.include_history_steps
+    TOCABIAMPCfgPPO.algorithm.mirror = {'HipPitch': (2,8), 
+        'KneePitch': (3,9), 
+        'AnklePitch': (4,10),
+        } # Joint pairs that need to be mirrored
+    TOCABIAMPCfgPPO.algorithm.mirror_neg = {'HipYaw': (0,6), 'HipRoll': (1,7), 'AnkleRoll': (5,11) } # Joint pairs that need to be mirrored and signs must be changed
+    TOCABIAMPCfgPPO.algorithm.mirror_weight = 4.
+# The following lists indicate the ranges in the observation vector indices, for which specific mirroring method should applied
+# For example, cartesian_angular_mirror = [(0,3), (6,12)] indicate that the cartesian angular mirror operation should be applied
+# to the 0th~2nd, and the 6th~8th, 9th~11th elements of the observation vector.
+    TOCABIAMPCfgPPO.algorithm.cartesian_angular_mirror = [(3,6)]
+    TOCABIAMPCfgPPO.algorithm.cartesian_linear_mirror = [(0,3), (6,9)]
+    TOCABIAMPCfgPPO.algorithm.cartesian_command_mirror = [(9,12)]
+# The following list indicate the ranges in the observation vector indices, for which switching places is necessary
+    TOCABIAMPCfgPPO.algorithm.switch_mirror = []
+# The following list indicate the ranges in the observation vector indices, for which no mirroring is necessary.
+    TOCABIAMPCfgPPO.algorithm.no_mirror = []
+
+if TOCABIAMPCfgPPO.policy.encoder_dim is not None:
+    TOCABIAMPCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+
+TOCABIAMPCfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
+TOCABIAMPCfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
+TOCABIAMPCfg.rewards.scales.base_height *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)

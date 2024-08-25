@@ -49,6 +49,7 @@ from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_fl
 from legged_gym.utils.helpers import class_to_dict
 from rsl_rl.datasets.motion_loader import AMPLoader
 from rsl_rl.utils.utils import Normalizer_obs
+from legged_gym.envs.base import observation_buffer
 
 class TOCABIAMP(LeggedRobot):
 
@@ -59,6 +60,20 @@ class TOCABIAMP(LeggedRobot):
         self.control_ticks = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
         if cfg.normalization.normalize_observation:
             self.normalizer_obs = Normalizer_obs(self.num_privileged_obs)
+        if self.privileged_obs_buf is not None: # privileged
+            self.privileged_buf_history = observation_buffer.ObservationBuffer(
+                self.num_envs, self.num_privileged_obs,
+                self.include_history_steps, self.skips, self.device
+            )
+        self.encoder = False
+
+    def set_encoder(self, encoder_dim, encoder_history_steps, encoder_skips):
+        self.encoder = True
+        self.encoder_dim = encoder_dim
+        self.encoder_history_steps = encoder_history_steps
+       # # encoder
+        self.encoder_skips = encoder_skips
+        self.long_obs_buffer = observation_buffer.ObservationBuffer(self.num_envs, self.num_obs, self.encoder_history_steps, self.encoder_skips, self.device)
 
     def reset(self):
         """ Reset all robots"""
@@ -67,7 +82,21 @@ class TOCABIAMP(LeggedRobot):
             self.obs_buf_history.reset(
                 torch.arange(self.num_envs, device=self.device),
                 self.obs_buf[torch.arange(self.num_envs, device=self.device)])
-        obs, privileged_obs, _, _, _, _, _ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
+        # encoder
+        if self.encoder:
+            self.long_obs_buffer.reset(
+                torch.arange(self.num_envs, device=self.device),
+                self.obs_buf[torch.arange(self.num_envs, device=self.device)]
+            )
+        if self.privileged_obs_buf is not None: # privileged
+            self.privileged_buf_history.reset(
+                torch.arange(self.num_envs, device=self.device),
+                self.privileged_obs_buf[torch.arange(self.num_envs, device=self.device)])
+
+        if self.encoder:    
+            obs, privileged_obs, _, _, _, _, _, long_history = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
+        else:
+            obs, privileged_obs, _, _, _, _, _ = self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
         return obs, privileged_obs
 
     def step(self, actions):
@@ -85,8 +114,8 @@ class TOCABIAMP(LeggedRobot):
         self.render()
         for _ in range(self.cfg.control.decimation):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape)
-            if self.cfg.domain_rand.randomize_torque:
-                self.torques *= torch.rand_like(self.torques)*(self.cfg.domain_rand.torque_constant[1]-self.cfg.domain_rand.torque_constant[0]) + self.cfg.domain_rand.torque_constant[0]
+            # if self.cfg.domain_rand.randomize_torque:
+            #     self.torques *= torch.rand_like(self.torques)*(self.cfg.domain_rand.torque_constant[1]-self.cfg.domain_rand.torque_constant[0]) + self.cfg.domain_rand.torque_constant[0]
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
             if self.device == 'cpu':
@@ -105,10 +134,24 @@ class TOCABIAMP(LeggedRobot):
             policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps))
         else:
             policy_obs = self.obs_buf
-        if self.privileged_obs_buf is not None:
-            self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
 
-        return policy_obs, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states
+        # encoder
+        if self.encoder:
+            self.long_obs_buffer.reset(reset_env_ids, self.obs_buf[reset_env_ids])
+            self.long_obs_buffer.insert(self.obs_buf)
+            long_history_obs = self.long_obs_buffer.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
+        privileged_obs = self.privileged_obs_buf
+
+        if self.privileged_obs_buf is not None: # privileged
+            if self.cfg.env.include_history_steps is not None:
+                self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
+                self.privileged_buf_history.reset(reset_env_ids, self.privileged_obs_buf[reset_env_ids])
+                self.privileged_buf_history.insert(self.privileged_obs_buf)
+                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps))
+        if self.encoder:
+            return policy_obs, privileged_obs, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states, long_history_obs
+        else:
+            return policy_obs, privileged_obs, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states
     
     def step_forced(self, joint_states: torch.Tensor):
         self.render()
@@ -134,7 +177,30 @@ class TOCABIAMP(LeggedRobot):
             policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps))
         else:
             policy_obs = self.obs_buf
+
+        # if self.encoder_dim is not None:
+        #     encoder_input = self.encoder_buf_history.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
+        #     encoder_output = self.encoder(encoder_input)
+        #     assert encoder_output.shape == (self.num_envs, self.encoder_dim), f"encoder output dimension mismatch, {encoder_output.shape}"
+        #     assert policy_obs.shape == (self.num_envs, self.num_obs*self.include_history_steps), f"policy obs shape : {policy_obs.shape}"
+        #     policy_obs = torch.cat((policy_obs, encoder_output), dim=-1)            
+
         return policy_obs
+    
+    def get_long_history(self):
+        return self.long_obs_buffer.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
+
+    def get_privileged_observations(self): # privileged
+        privileged_obs = self.privileged_obs_buf
+        if privileged_obs is not None:
+            if self.cfg.env.include_history_steps is not None:
+                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps))
+            # if self.encoder_dim is not None:
+            #     encoder_input = self.encoder_buf_history.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
+            #     encoder_output = self.encoder(encoder_input)
+            #     assert encoder_output.shape == (self.num_envs, self.encoder_dim), f"encoder output dimension mismatch, {encoder_output.shape}"
+            #     privileged_obs = torch.cat((privileged_obs, encoder_output), dim=-1)        
+        return privileged_obs
 
     def post_physics_step(self):
         """ check terminations, compute observations and rewards
@@ -159,6 +225,7 @@ class TOCABIAMP(LeggedRobot):
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
+        # print("reward at post physics : ", self.rew_buf)
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         terminal_amp_states = self.get_amp_observations()[env_ids]
         self.reset_idx(env_ids)
@@ -221,6 +288,8 @@ class TOCABIAMP(LeggedRobot):
         # randomize dof properties
         if self.cfg.domain_rand.randomize_joints:
             self.randomize_joints(env_ids=env_ids)
+        if self.cfg.domain_rand.randomize_torque:
+            self.torque_constant[env_ids] = torch.rand_like(self.torque_constant[env_ids], dtype=torch.float32, device=self.device)  # 0~1
 
         # reset control tick
         self.control_ticks[env_ids] = 0
@@ -234,7 +303,7 @@ class TOCABIAMP(LeggedRobot):
         # fill extras
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
-            self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
+            self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length # _s # normalize reward signal
             self.episode_sums[key][env_ids] = 0.
         # log additional curriculum info
         if self.cfg.terrain.curriculum:
@@ -256,8 +325,9 @@ class TOCABIAMP(LeggedRobot):
                 0.18, 0.18, 0.18, 0.18, 0.0032, 0.0032, 0.0032, 0.0032]
             props['damping'].fill(0.1)
             # randomize lower body joints. Upper body joints are PD controlled.
-            props['damping'][:self.num_actions] *= np.random.uniform(low=self.cfg.domain_rand.damping_range[0], high=self.cfg.domain_rand.damping_range[1])
-            props['armature'][:self.num_actions] *= np.random.uniform(low=self.cfg.domain_rand.armature_range[0], high=self.cfg.domain_rand.armature_range[1])
+            for i in range(self.num_actions):
+                props['damping'][i] *= np.random.uniform(low=self.cfg.domain_rand.damping_range[0], high=self.cfg.domain_rand.damping_range[1])
+                props['armature'][i] *= np.random.uniform(low=self.cfg.domain_rand.armature_range[0], high=self.cfg.domain_rand.armature_range[1])
             self.gym.set_actor_dof_properties(self.envs[env], 0, props)
 
     def compute_reward(self):
@@ -268,7 +338,10 @@ class TOCABIAMP(LeggedRobot):
         self.rew_buf[:] = 0.
         for i in range(len(self.reward_functions)):
             name = self.reward_names[i]
+            # print(f"reward {name} : ", self.reward_functions[i]().mean())
             rew = self.reward_functions[i]() * self.reward_scales[name]
+            # print(f"reward scale {name} : {self.reward_scales[name]}")
+            # print(f"reward {name} after scale : ", rew.mean())
             self.rew_buf += rew
             self.episode_sums[name] += rew
         if self.cfg.rewards.only_positive_rewards:
@@ -282,15 +355,15 @@ class TOCABIAMP(LeggedRobot):
     def compute_observations(self):
         """ Computes observations
         """
-        self.privileged_obs_buf = torch.cat((  
-                                    self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.base_ang_vel  * self.obs_scales.ang_vel,
-                                    self.projected_gravity,
-                                    self.commands[:, :3] * self.commands_scale,
-                                    (self.dof_pos[:, :self.num_actions] - self.default_dof_pos[:, :self.num_actions]) * self.obs_scales.dof_pos,
-                                    self.dof_vel[:, :self.num_actions] * self.obs_scales.dof_vel,
-                                    self.actions
-                                    ),dim=-1)
+        # self.privileged_obs_buf = torch.cat((  
+        #                             self.base_lin_vel * self.obs_scales.lin_vel,
+        #                             self.base_ang_vel  * self.obs_scales.ang_vel,
+        #                             self.projected_gravity,
+        #                             self.commands[:, :3] * self.commands_scale,
+        #                             (self.dof_pos[:, :self.num_actions] - self.default_dof_pos[:, :self.num_actions]) * self.obs_scales.dof_pos,
+        #                             self.dof_vel[:, :self.num_actions] * self.obs_scales.dof_vel,
+        #                             self.actions
+        #                             ),dim=-1)
         self.privileged_obs_buf = torch.cat((  
                                     self.base_lin_vel,
                                     self.base_ang_vel,
@@ -487,7 +560,7 @@ class TOCABIAMP(LeggedRobot):
         # randomize base mass
         if self.cfg.domain_rand.randomize_base_mass:
             rng = self.cfg.domain_rand.added_mass_range
-            props[0].mass += np.random.uniform(rng[0], rng[1])
+            props[0].mass *= np.random.uniform(rng[0], rng[1])
 
         return props
     
@@ -522,7 +595,7 @@ class TOCABIAMP(LeggedRobot):
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
         # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.05).unsqueeze(1)
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -562,6 +635,9 @@ class TOCABIAMP(LeggedRobot):
             torques = actions_scaled
             if self.normalizer_obs is not None:
                 torques = actions_scaled * self.torque_limits[:self.num_actions].unsqueeze(0)
+            if self.cfg.domain_rand.randomize_torque:
+                torques *= (1 + (self.torque_constant - 0.5) * self.cfg.domain_rand.torque_constant_range)
+
             # upper body
             p_gains = p_gains.unsqueeze(0)
             d_gains = d_gains.unsqueeze(0)
@@ -774,6 +850,7 @@ class TOCABIAMP(LeggedRobot):
 
         # WH
         self.robot_mass = torch.zeros((self.num_envs, 1), dtype=torch.float, device=self.device, requires_grad=False)
+        self.torque_constant = torch.rand((self.num_envs, 1), dtype=torch.float, device=self.device)
 
         # joint positions offsets and PD gains
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)

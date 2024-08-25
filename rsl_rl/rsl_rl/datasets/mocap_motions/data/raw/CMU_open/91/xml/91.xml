@@ -20,7 +20,7 @@
 				<body name="L_HipCenter_Link">
 					<joint armature="0.1" damping="0.5" name="L_HipRoll_Joint" axis="0.0 -0.342 0.94" stiffness="0.2120002889342212" type="hinge" range="-70.0 70.0" />
 					<body name="L_Thigh_Link">
-						<joint armature="0.1" damping="0.5" name="L_HipPitch_Joint" axis="1.0 0.0 0.0" pos="-0.0 -0.15 0.413" stiffness="0.2120002889342212" type="hinge" range="-60.0 70.0" />
+						<joint armature="0.1" damping="0.5" name="L_HipPitch_Joint" axis="1.0 0.0 0.0" stiffness="0.2120002889342212" type="hinge" range="-60.0 70.0" />
 						<body name="L_Knee_Link" pos="0.0 0.15 -0.413">
 							<joint armature="0.1" damping="0.5" name="L_Knee_Joint" axis="0.0 0.94 0.342" stiffness="0.19443368002082823" type="hinge" range="-10.0 170.0" />
 							<body name="L_AnkleCenter_Link" pos="0.0 0.154 -0.422">

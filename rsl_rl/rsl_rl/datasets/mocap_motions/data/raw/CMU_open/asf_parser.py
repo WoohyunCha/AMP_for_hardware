@@ -12,8 +12,9 @@ VERY IMPORTANT
 In order to run CMU_parser.py, you must edit the converted XML file, so that the upper body information is commented out and the names of the joints match the TARGET XML file.
 '''
 
-ASF_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/asf/91.asf'
-XML_FILE = os.path.join('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/', os.path.splitext(os.path.basename(ASF_FILE))[0]+'.xml')
+FILE = '69.asf'
+ASF_FILE = os.path.join('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/', os.path.splitext(os.path.basename(FILE))[0], 'asf/', os.path.splitext(os.path.basename(FILE))[0]+'.asf')
+XML_FILE = os.path.join('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/', os.path.splitext(os.path.basename(FILE))[0], 'xml/', os.path.splitext(os.path.basename(FILE))[0]+'.xml')
 
 def isfloat(value):
     try:

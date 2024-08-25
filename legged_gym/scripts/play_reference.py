@@ -33,27 +33,41 @@ import os
 
 import isaacgym
 from legged_gym.envs import *
-from legged_gym.utils import get_args, export_policy_as_jit, export_critic_as_jit, export_normalizer_as_jit, task_registry, Logger
+from legged_gym.utils import get_args, task_registry
 
 import numpy as np
 import torch
 from rsl_rl.datasets.motion_loader import AMPLoader
 import glob
 
-REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_walk_1.json')
-# REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/91/91_sad_walk.json')
+# REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_slow_walk_2.json')
+# REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/91/91_straight_walk.json')
+# REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/69/69_walk_forward_01.json')
 # REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json')
-REFERENCE_HZ = 120
+# REFERENCE_HZ = 120
 # REFERENCE_HZ = 2000
-REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml'
+# REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml'
 # REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/91.xml'
+# REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/69/xml/69.xml'
+REFERENCE_DICT = {
+    '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_walk_1.json' :{
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml',
+        'hz' : 120,
+        'start_time' : 0.,
+        'end_time' : 2.6,
+        'model_dof' : 12
+    },
+}
+REFERENCE_JSON, REFERENCE_INFO = next(iter(REFERENCE_DICT.items()))
+REFERENCE_MODEL_FILE = REFERENCE_INFO['xml']
+REFERENCE_HZ = REFERENCE_INFO['hz']
+RENDER_HZ = 100
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 2)
-    env_cfg.env.amp_motion_files = REFERENCE_MOTION_FILE
-    env_cfg.env.reference_model_file = REFERENCE_MODEL_FILE
+    env_cfg.env.amp_motion_files = REFERENCE_DICT
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 5
     env_cfg.terrain.curriculum = False
@@ -75,7 +89,7 @@ def play(args):
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
     # env.dt = 1/REFERENCE_HZ
-    motion_tensor = AMPLoader('cuda:0', env.dt, motion_files=REFERENCE_MOTION_FILE, model_file=REFERENCE_MODEL_FILE).trajectories[0]
+    motion_tensor = AMPLoader('cuda:0', env.dt, reference_dict=REFERENCE_DICT).trajectories[0]
     # # load policy
     # train_cfg.runner.resume = True
     # train_cfg.runner.LOG_WANDB = False
@@ -98,47 +112,9 @@ def play(args):
     frames = motion_tensor#[REFERENCE_START_INDEX:REFERENCE_END_INDEX]
     for _ in range(100):
         for i in range(frames.shape[0]):
-            # print(obs)
-            # if normalizer is not None:
-            #     obs = normalizer(obs)
-            #     print("after normalize : ", obs)
-            frame = frames[i]
-            env.step_forced(frame)
-
-            # if RECORD_FRAMES:
-            #     if i % 2:
-            #         filename = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'frames', f"{img_idx}.png")
-            #         env.gym.write_viewer_image_to_file(env.viewer, filename)
-            #         img_idx += 1 
-            # if MOVE_CAMERA:
-            #     camera_position += camera_vel * env.dt
-            #     env.set_camera(camera_position, camera_position + camera_direction)
-
-            # if i < stop_state_log and i > start_state_log:
-            #     logger.log_states(
-            #         {
-            #             'dof_pos': env.dof_pos[robot_index, joint_index].item(),
-            #             'dof_vel': env.dof_vel[robot_index, joint_index].item(),
-            #             'dof_torque': env.torques[robot_index, joint_index].item(),
-            #             'command_x': env.commands[robot_index, 0].item(),
-            #             'command_y': env.commands[robot_index, 1].item(),
-            #             'command_yaw': env.commands[robot_index, 2].item(),
-            #             'base_vel_x': env.base_lin_vel[robot_index, 0].item(),
-            #             'base_vel_y': env.base_lin_vel[robot_index, 1].item(),
-            #             'base_vel_z': env.base_lin_vel[robot_index, 2].item(),
-            #             'base_vel_yaw': env.base_ang_vel[robot_index, 2].item(),
-            #             'contact_forces_z': env.contact_forces[robot_index, env.feet_indices, 2].cpu().numpy()
-            #         }
-            #     )
-            # elif i==stop_state_log:
-            #     logger.plot_states()
-            # if  0 < i < stop_rew_log:
-            #     if infos["episode"]:
-            #         num_episodes = torch.sum(env.reset_buf).item()
-            #         if num_episodes>0:
-            #             logger.log_rewards(infos["episode"], num_episodes)
-            # elif i==stop_rew_log:
-            #     logger.print_rewards()
+            if i % int(REFERENCE_HZ/RENDER_HZ) == 0:
+                frame = frames[i]
+                env.step_forced(frame)
 
 if __name__ == '__main__':
     # EXPORT_POLICY = True
