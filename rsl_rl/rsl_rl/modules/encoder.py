@@ -29,34 +29,7 @@ class CNNEncoder(nn.Module):
         # self.register_buffer('obs_buf', torch.zeros(self.num_envs, self.num_obs_total, dtype=torch.float))
         # self.obs_buf = torch.zeros(self.num_envs, self.num_obs_total, dtype=torch.float)
 
-    # def insert_obs(self, new_obs: torch.Tensor):
-    #     # Shift observations back.
-    #     self.obs_buf[:, : -self.num_obs] = self.obs_buf[:,self.num_obs:]
-    #     # Add new observation.
-    #     self.obs_buf[:, -self.num_obs:] = new_obs
-    #     return
 
-    # def reset_obs(self, reset_idxs, new_obs):
-    #     self.obs_buf[reset_idxs] = new_obs.repeat(1, ((self.include_history_steps-1) * self.skips + 1))
-    #     return
-
-    # def get_obs_vec(self):
-    #     obs = []
-    #     obs_ids = np.arange(self.include_history_steps)
-    #     for obs_id in (sorted(obs_ids)):
-    #         slice_idx = self.include_history_steps - obs_id - 1
-    #         start = -(self.skips * slice_idx + 1)* self.num_obs
-    #         end = -self.skips * slice_idx * self.num_obs
-    #         if obs_id == obs_ids[-1]:
-    #             assert end == 0
-    #         if end == 0:
-    #             obs.append(self.obs_buf[:, start :])
-    #         else:            
-    #             obs.append(self.obs_buf[:, start : end])
-    #     return torch.cat(obs, dim=-1).view(self.num_envs, self.num_obs, self.include_history_steps) # This will result in giving 50 observations, which are 0.04s apart
-
-    # def get_encoder_output(self):
-    #     return self.forward(self.get_obs_vec())
 
     def forward(self, x):
         # Input shape: (B, d, T) = (B, 8, 50)

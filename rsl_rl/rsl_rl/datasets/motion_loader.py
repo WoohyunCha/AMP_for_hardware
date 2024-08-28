@@ -33,7 +33,7 @@ class AMPLoader:
     LINEAR_VEL_SIZE = 0
     ANGULAR_VEL_SIZE = 0
     JOINT_VEL_SIZE = 12
-    ROOT_POS_SIZE = 0 # base height change
+    ROOT_POS_SIZE = 0 # base height 
     ROOT_ROT_SIZE = 4 # projected gravity
 
     OBSERVATION_DIM = ROOT_POS_SIZE + ROOT_ROT_SIZE + LINEAR_VEL_SIZE + ANGULAR_VEL_SIZE\
@@ -281,7 +281,7 @@ class AMPLoader:
 
         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32, requires_grad=False).unsqueeze(-1)
 
-        # pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend)
+        # pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend) 
         rot_blend = self.slerp(all_frame_rot_starts, all_frame_rot_ends, blend)
         # lin_blend = self.slerp(all_frame_linvel_starts, all_frame_linvel_ends, blend)
         # ang_blend = self.slerp(all_frame_angvel_starts, all_frame_angvel_ends, blend)
@@ -327,7 +327,7 @@ class AMPLoader:
             An interpolation of the two frames.
         """
 
-        root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
+        # root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
         root_rot0, root_rot1 = AMPLoader.get_root_rot(frame0), AMPLoader.get_root_rot(frame1)
         linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
         angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
@@ -335,7 +335,7 @@ class AMPLoader:
         joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
         foot_pos0, foot_pos1 = AMPLoader.get_foot_pos(frame0), AMPLoader.get_foot_pos(frame1)
         
-        # blend_root_pos = self.slerp(root_pos0, root_pos1, blend)
+        # blend_root_pos = self.slerp(root_pos0, root_pos1, blend) 
         blend_root_rot = self.slerp(root_rot0, root_rot1, blend)
         # blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
         # blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
@@ -347,7 +347,7 @@ class AMPLoader:
         #     blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
         #     blend_foot_pos
         #     ], dim=-1)
-        # ret = torch.cat([
+        # ret = torch.cat([ 
         #     blend_root_pos, blend_root_rot, blend_joints, blend_joints_vel,
         #     blend_foot_pos
         #     ], dim=-1)

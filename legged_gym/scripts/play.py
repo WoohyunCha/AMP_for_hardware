@@ -50,6 +50,7 @@ def play(args):
     env_cfg.domain_rand.push_robots = False
     env_cfg.domain_rand.randomize_gains = False
     env_cfg.domain_rand.randomize_base_mass = False
+    env_cfg.domain_rand.randomize_link_mass = False
     if args.speed is not None:
         env_cfg.commands.num_commands = 4
         env_cfg.commands.heading_command = True        
@@ -62,7 +63,6 @@ def play(args):
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
-    
     train_cfg.runner.resume = True
     train_cfg.runner.LOG_WANDB = False
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg, play=True)

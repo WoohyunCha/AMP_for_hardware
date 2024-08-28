@@ -287,7 +287,7 @@ class AMPPPO:
                     policy_loss = torch.nn.Tanh()(
                         boundary*policy_d
                     ).mean()
-                    amp_loss = (expert_loss + policy_loss) *0.5
+                    amp_loss = (expert_loss + policy_loss) 
                     grad_pen_loss = self.discriminator.compute_grad_pen(
                         *sample_amp_expert, lambda_=self.disc_grad_pen)
                 else: 
