@@ -176,14 +176,7 @@ class TOCABIAMP(LeggedRobot):
         if self.cfg.env.include_history_steps is not None:
             policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps))
         else:
-            policy_obs = self.obs_buf
-
-        # if self.encoder_dim is not None:
-        #     encoder_input = self.encoder_buf_history.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
-        #     encoder_output = self.encoder(encoder_input)
-        #     assert encoder_output.shape == (self.num_envs, self.encoder_dim), f"encoder output dimension mismatch, {encoder_output.shape}"
-        #     assert policy_obs.shape == (self.num_envs, self.num_obs*self.include_history_steps), f"policy obs shape : {policy_obs.shape}"
-        #     policy_obs = torch.cat((policy_obs, encoder_output), dim=-1)            
+            policy_obs = self.obs_buf           
 
         return policy_obs
     
@@ -194,12 +187,7 @@ class TOCABIAMP(LeggedRobot):
         privileged_obs = self.privileged_obs_buf
         if privileged_obs is not None:
             if self.cfg.env.include_history_steps is not None:
-                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps))
-            # if self.encoder_dim is not None:
-            #     encoder_input = self.encoder_buf_history.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
-            #     encoder_output = self.encoder(encoder_input)
-            #     assert encoder_output.shape == (self.num_envs, self.encoder_dim), f"encoder output dimension mismatch, {encoder_output.shape}"
-            #     privileged_obs = torch.cat((privileged_obs, encoder_output), dim=-1)        
+                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps))       
         return privileged_obs
 
     def post_physics_step(self):
@@ -209,7 +197,6 @@ class TOCABIAMP(LeggedRobot):
         """
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
-
         self.episode_length_buf += 1
         self.common_step_counter += 1
         self.control_ticks += 1
@@ -237,6 +224,10 @@ class TOCABIAMP(LeggedRobot):
 
         if self.viewer and self.enable_viewer_sync and self.debug_viz:
             self._draw_debug_vis()
+
+        # check to push robots
+        if self.episode_length_buf[env_ids].float().mean() > self.max_episode_length * 0.9:
+            self.start_perturb = True
 
         return env_ids, terminal_amp_states
 
@@ -278,6 +269,7 @@ class TOCABIAMP(LeggedRobot):
             self._reset_dofs(env_ids)
             self._reset_root_states(env_ids)
 
+        self.commands_initial[env_ids] = 0.
         self._resample_commands(env_ids)
 
         if self.cfg.domain_rand.randomize_gains:
@@ -289,7 +281,13 @@ class TOCABIAMP(LeggedRobot):
         if self.cfg.domain_rand.randomize_joints:
             self.randomize_joints(env_ids=env_ids)
         if self.cfg.domain_rand.randomize_torque:
-            self.torque_constant[env_ids] = torch.rand_like(self.torque_constant[env_ids], dtype=torch.float32, device=self.device)  # 0~1
+            self.torque_constant[env_ids] = 1 + (2*torch.rand_like(self.torque_constant[env_ids], dtype=torch.float32, device=self.device) - 1)* self.cfg.domain_rand.torque_constant_range 
+        if self.add_bias:
+            if self.cfg.bias.bias_dist == 'uniform':
+                self.bias_vec[env_ids] = (2*torch.rand_like(self.bias_vec[env_ids], dtype=torch.float32, device=self.device) - 1) * self.bias_scale_vec.unsqueeze(0)
+            if self.cfg.bias.bias_dist == 'gaussian':
+                self.bias_vec[env_ids] = torch.randn_like(self.bias_vec[env_ids], dtype=torch.float32, device=self.device) * self.bias_scale_vec.unsqueeze(0)
+
 
         # reset control tick
         self.control_ticks[env_ids] = 0
@@ -324,11 +322,39 @@ class TOCABIAMP(LeggedRobot):
                 0.0032, 0.0032, \
                 0.18, 0.18, 0.18, 0.18, 0.0032, 0.0032, 0.0032, 0.0032]
             props['damping'].fill(0.1)
+            # props['friction'] = len(props['friction']) * [0.1] # WHAT IS THIS?
+            # print(props['friction'])
+
             # randomize lower body joints. Upper body joints are PD controlled.
             for i in range(self.num_actions):
-                props['damping'][i] *= np.random.uniform(low=self.cfg.domain_rand.damping_range[0], high=self.cfg.domain_rand.damping_range[1])
+                props['damping'][i] += np.random.uniform(low=self.cfg.domain_rand.damping_range[0], high=self.cfg.domain_rand.damping_range[1])
                 props['armature'][i] *= np.random.uniform(low=self.cfg.domain_rand.armature_range[0], high=self.cfg.domain_rand.armature_range[1])
+                # props['friction'][i] *= np.random.uniform(low=self.cfg.domain_rand.dof_friction_range[0], high=self.cfg.domain_rand.dof_friction_range[1])
             self.gym.set_actor_dof_properties(self.envs[env], 0, props)
+
+    def randomize_link_mass(self, env_ids): # DOES NOT WORK RUNTIME
+        for env in env_ids:
+            env_handle = self.envs[env]
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, 0)
+            rng = self.cfg.domain_rand.added_link_mass_range
+            for i, _ in enumerate(body_props):                    
+                body_props[i].mass = self.rb_mass[env, i].item() * np.random.uniform(rng[0], rng[1])
+            self.gym.set_actor_rigid_body_properties(env_handle, 0, body_props, recomputeInertia=True)    
+
+    def randomize_link_friction(self, env_ids): # DOES NOT WORK RUNTIME
+        for env in env_ids:
+            env_handle = self.envs[env]
+            props = self.gym.get_actor_rigid_shape_properties(env_handle, 0)
+            rng = self.cfg.domain_rand.friction_range
+            for i, _ in enumerate(props):
+                print("originally : ", props[i].friction)
+                print("originally rolling: ", props[i].rolling_friction)
+                print("originally torsion: ", props[i].torsion_friction)
+                props[i].friction = np.random.uniform(rng[0], rng[1])
+                props[i].rolling_friction = np.random.uniform(rng[0], rng[1])
+                props[i].torsion_friction = np.random.uniform(rng[0], rng[1])
+            self.gym.set_actor_rigid_shape_properties(env_handle, 0, props)
+
 
     def compute_reward(self):
         """ Compute rewards
@@ -384,7 +410,10 @@ class TOCABIAMP(LeggedRobot):
             if self.cfg.noise.noise_dist == 'uniform':
                 self.privileged_obs_buf += (2 * torch.rand_like(self.privileged_obs_buf) - 1) * self.noise_scale_vec
             elif self.cfg.noise.noise_dist == 'gaussian':
-                self.privileged_obs_buf += (2 * torch.randn_like(self.privileged_obs_buf) - 1) * self.noise_scale_vec
+                self.privileged_obs_buf += torch.randn_like(self.privileged_obs_buf) * self.noise_scale_vec
+        if self.add_bias:
+            self.privileged_obs_buf += self.bias_vec
+            
         # Remove velocity observations from policy observation. 
         # Batch norm for observations
         # print("Before normalize : ", self.obs_buf[0])
@@ -404,7 +433,7 @@ class TOCABIAMP(LeggedRobot):
         # print("After normalize : ", self.obs_buf[0])
 
         if self.num_obs == self.num_privileged_obs - 6:
-            self.obs_buf = self.privileged_obs_buf[:, 6:] #change
+            self.obs_buf = self.privileged_obs_buf[:, 6:] 
         else:
             self.obs_buf = torch.clone(self.privileged_obs_buf)
 
@@ -463,7 +492,7 @@ class TOCABIAMP(LeggedRobot):
             if env_id==0:
                 # prepare friction randomization
                 friction_range = self.cfg.domain_rand.friction_range
-                num_buckets = 64
+                num_buckets = self.num_envs # 64
                 bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
                 friction_buckets = torch_rand_float(friction_range[0], friction_range[1], (num_buckets,1), device='cpu')
                 self.friction_coeffs = friction_buckets[bucket_ids]
@@ -560,7 +589,10 @@ class TOCABIAMP(LeggedRobot):
         # randomize base mass
         if self.cfg.domain_rand.randomize_base_mass:
             rng = self.cfg.domain_rand.added_mass_range
-            props[0].mass *= np.random.uniform(rng[0], rng[1])
+            # props[0].mass *= np.random.uniform(rng[0], rng[1])
+
+            for prop in props:
+                prop.mass *= np.random.uniform(rng[0], rng[1])
 
         return props
     
@@ -570,7 +602,15 @@ class TOCABIAMP(LeggedRobot):
         """
         # 
         env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
+        self.commands_initial[env_ids] = self.commands[env_ids]
         self._resample_commands(env_ids)
+
+        if self.cfg.commands.soft_command:
+            # interpolate between commands_initial and commands_target
+            lerp_tick = self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)
+            lerp_time = torch.clamp(lerp_tick * self.dt, min=0., max=self.cfg.commands.soft_command_time).unsqueeze(1)
+            self.commands = self.commands_initial * (1-lerp_time/self.cfg.commands.soft_command_time) + self.commands_target * lerp_time/self.cfg.commands.soft_command_time
+
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
@@ -586,16 +626,32 @@ class TOCABIAMP(LeggedRobot):
 
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
-        """
-        self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        if self.cfg.commands.heading_command:
-            self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
-        else:
-            self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+            SOFT COMMAND
+            soft_command sets target command, and in post physics step, the actual command is calculated as the lerp between the start command and target commmand
+        """
+
+        if self.cfg.commands.soft_command:
+            # set small commands to zero
+            self.commands_target[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            self.commands_target[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            if self.cfg.commands.heading_command:
+                self.commands_target[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            else:
+                self.commands_target[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+
+            # set small commands to zero
+            self.commands_target[env_ids, :2] *= (torch.norm(self.commands_target[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+
+        else:
+            self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            if self.cfg.commands.heading_command:
+                self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            else:
+                self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+            self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -636,7 +692,7 @@ class TOCABIAMP(LeggedRobot):
             if self.normalizer_obs is not None:
                 torques = actions_scaled * self.torque_limits[:self.num_actions].unsqueeze(0)
             if self.cfg.domain_rand.randomize_torque:
-                torques *= (1 + (self.torque_constant - 0.5) * self.cfg.domain_rand.torque_constant_range)
+                torques *= self.torque_constant
 
             # upper body
             p_gains = p_gains.unsqueeze(0)
@@ -800,6 +856,18 @@ class TOCABIAMP(LeggedRobot):
             noise_vec[48:235] = noise_scales.height_measurements* noise_level
         return noise_vec
 
+    def _get_bias_scale_vec(self, cfg):
+        bias_vec = torch.zeros_like(self.privileged_obs_buf[0])
+        self.bias_vec = torch.zeros_like(self.privileged_obs_buf)
+        self.add_bias = self.cfg.bias.add_bias
+        bias_scales = self.cfg.bias.bias_scales
+        bias_vec[:3] = bias_scales.lin_vel
+        bias_vec[3:6] = bias_scales.ang_vel
+        bias_vec[6:9] = bias_scales.gravity
+        bias_vec[12:24] = bias_scales.dof_pos
+        
+        return bias_vec
+
     #----------------------------------------
     def _init_buffers(self):
         """ Initialize torch tensors which will contain simulation states and processed quantities
@@ -825,6 +893,7 @@ class TOCABIAMP(LeggedRobot):
         self.common_step_counter = 0
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
+        self.bias_scale_vec = self._get_bias_scale_vec(self.cfg)
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
 
@@ -838,6 +907,8 @@ class TOCABIAMP(LeggedRobot):
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
+        self.commands_target = torch.zeros_like(self.commands)
+        self.commands_initial = torch.zeros_like(self.commands)
         self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,)
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
@@ -900,6 +971,8 @@ class TOCABIAMP(LeggedRobot):
                 # see how inertia tensor is made : https://ocw.mit.edu/courses/16-07-dynamics-fall-2009/dd277ec654440f4c2b5b07d6c286c3fd_MIT16_07F09_Lec26.pdf
                 self.rb_mass[env, N] = rb_props.mass
         self.robot_mass = torch.sum(self.rb_mass, dim=1).unsqueeze(1)
+
+        self.start_perturb = False
 
 
     def compute_randomized_gains(self, num_envs):

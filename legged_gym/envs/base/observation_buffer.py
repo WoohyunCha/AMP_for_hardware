@@ -10,12 +10,14 @@ class ObservationBuffer:
         self.skips = skips # The number of skips between observations
         if self.skips is None:
             self.skips = 1
-        self.num_obs_total = num_obs * ((include_history_steps-1) * self.skips + 1)
+        # self.num_obs_total = num_obs * ((include_history_steps-1) * self.skips + 1)
+        self.num_obs_total = num_obs * (include_history_steps * self.skips)
 
         self.obs_buf = torch.zeros(self.num_envs, self.num_obs_total, device=self.device, dtype=torch.float)
 
     def reset(self, reset_idxs, new_obs):
-        self.obs_buf[reset_idxs] = new_obs.repeat(1, ((self.include_history_steps-1) * self.skips + 1))
+        # self.obs_buf[reset_idxs] = new_obs.repeat(1, ((self.include_history_steps-1) * self.skips + 1))
+        self.obs_buf[reset_idxs] = new_obs.repeat(1, (self.include_history_steps * self.skips))
 
     def insert(self, new_obs):
         # # Shift observations back.
@@ -30,7 +32,7 @@ class ObservationBuffer:
         return
 
 
-    def get_obs_vec(self, obs_ids):
+    def get_obs_vec(self, obs_ids, delay = 0):
         """Gets history of observations indexed by obs_ids.
         
         Arguments:
@@ -47,15 +49,16 @@ class ObservationBuffer:
         obs = []
         for obs_id in (sorted(obs_ids)):
             slice_idx = self.include_history_steps - obs_id - 1
-            start = -(self.skips * slice_idx + 1)* self.num_obs
-            end = -self.skips * slice_idx * self.num_obs
-            if obs_id == obs_ids[-1]:
-                assert end == 0
+            start = -(self.skips * slice_idx + 1 + delay)* self.num_obs 
+            end = -(self.skips * slice_idx + delay) * self.num_obs
+            if obs_id == obs_ids[-1] and delay == 0:
+                assert end == 0, f"delay is 0 but end index is at last element."
             if end == 0:
                 obs.append(self.obs_buf[:, start :])
             else:            
                 obs.append(self.obs_buf[:, start : end])
         return torch.cat(obs, dim=-1)
+
 
 # device = 'cuda:0'
 # num_obs=  2
