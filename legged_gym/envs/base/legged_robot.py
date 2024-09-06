@@ -84,7 +84,6 @@ class LeggedRobot(BaseTask):
         self._init_buffers()
         self._prepare_reward_function()
         self.init_done = True
-        #TODO uncomment this to use default amp loader.
         if hasattr(self, "_custom_init"):
             self._custom_init(cfg)
         if self.cfg.env.reference_state_initialization:
@@ -855,6 +854,22 @@ class LeggedRobot(BaseTask):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
+
+    def _destroy_envs(self, env_ids):
+        for env in env_ids:
+            env_handle = self.gym.get_env(self.sim, env)
+            self.gym.destroy_env(env_handle)
+            print(f"ENV {env} DESTROYED!!!!!!!!!")
+
+    def _recreate_envs(self, env_ids):
+        self._destroy_envs(env_ids=env_ids)
+        for env in env_ids:
+            pass
+            # TODO
+            # from asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR), generate randomized asset file.
+            # load randomized asset and create envs.
+            # replace self.envs[env] with newly created env
+            # init buffers at env_ids
 
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.

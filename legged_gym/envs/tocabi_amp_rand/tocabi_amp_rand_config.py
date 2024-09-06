@@ -108,10 +108,10 @@ REFERENCE_DICT = {
     # },
 }
 
-class TOCABIAMPCfg( LeggedRobotCfg ):
+class TOCABIAMPRandCfg( LeggedRobotCfg ):
 
     class env( LeggedRobotCfg.env ):
-        num_envs = 16
+        num_envs = 4096
         include_history_steps = 10  # Number of steps of history to include.
         skips = 2 # Number of steps to skip between steps in history
         num_observations = 48 # change 42
@@ -122,6 +122,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         episode_length_s = 15 # episode length in seconds
         num_actions = 12
         play = False
+
 
     class init_state( LeggedRobotCfg.init_state ):
 
@@ -297,6 +298,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
         # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_random.xml'
         file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
+        num_morphologies = 128 # num_envs must be a multiple of num_morphologies
 
         asset_is_mjcf = True
         name = "tocabi"
@@ -318,18 +320,18 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         # fix_base_link = True
           
     class domain_rand:
-        randomize_friction = True
+        randomize_friction = False
         friction_range = [0., 2.]
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [.6, 1.4]
         randomize_link_mass = False
         added_link_mass_range = [.9, 1.1]
-        push_robots = True
+        push_robots = False
         push_interval_s = 5
         max_push_vel_xy = 0.2
-        randomize_torque = True
+        randomize_torque = False
         torque_constant_range = 0.1
-        randomize_joints = True
+        randomize_joints = False
         damping_range = [0., 2.9]
         armature_range = [0.6, 1.4]
         dof_friction_range = [0.6, 1.4]
@@ -338,12 +340,14 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         stiffness_multiplier_range = [0.9, 1.1]
         damping_multiplier_range = [0.9, 1.1]
 
-        randomize_delay = True
+        randomize_delay = False
         delay_range_s = 0.01
         # randomize_delay_interval_s = 10
     
+        link_length_randomize_range = 0.2
+
     class noise:
-        add_noise = True
+        add_noise = False
         noise_level = .001
         noise_dist = 'uniform' # gaussian
         class noise_scales:
@@ -355,7 +359,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             height_measurements = 10
     
     class bias:
-        add_bias = True
+        add_bias = False
         bias_dist = 'uniform' # gaussian
         class bias_scales:
             dof_pos = 0.03
@@ -450,7 +454,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
             contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
-class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
+class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
     runner_class_name = 'AMPOnPolicyRunner'
     seed = 1
 
@@ -475,7 +479,7 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         encoder_dim = 32
         encoder_history_steps = 50
         encoder_skips = 5
-        input_dim = TOCABIAMPCfg.env.num_observations
+        input_dim = TOCABIAMPRandCfg.env.num_observations
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         value_loss_coef = 1. #.5
@@ -509,28 +513,28 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         LOG_WANDB = False
         wgan = False
 
-if TOCABIAMPCfgPPO.runner.algorithm_class_name == 'AMPPPOSym':
-    TOCABIAMPCfgPPO.algorithm.include_history_steps = TOCABIAMPCfg.env.include_history_steps
-    TOCABIAMPCfgPPO.algorithm.mirror = {'HipPitch': (2,8), 
+if TOCABIAMPRandCfgPPO.runner.algorithm_class_name == 'AMPPPOSym':
+    TOCABIAMPRandCfgPPO.algorithm.include_history_steps = TOCABIAMPRandCfg.env.include_history_steps
+    TOCABIAMPRandCfgPPO.algorithm.mirror = {'HipPitch': (2,8), 
         'KneePitch': (3,9), 
         'AnklePitch': (4,10),
         } # Joint pairs that need to be mirrored
-    TOCABIAMPCfgPPO.algorithm.mirror_neg = {'HipYaw': (0,6), 'HipRoll': (1,7), 'AnkleRoll': (5,11) } # Joint pairs that need to be mirrored and signs must be changed
-    TOCABIAMPCfgPPO.algorithm.mirror_weight = 4.
+    TOCABIAMPRandCfgPPO.algorithm.mirror_neg = {'HipYaw': (0,6), 'HipRoll': (1,7), 'AnkleRoll': (5,11) } # Joint pairs that need to be mirrored and signs must be changed
+    TOCABIAMPRandCfgPPO.algorithm.mirror_weight = 4.
 # The following lists indicate the ranges in the observation vector indices, for which specific mirroring method should applied
 # For example, cartesian_angular_mirror = [(0,3), (6,12)] indicate that the cartesian angular mirror operation should be applied
 # to the 0th~2nd, and the 6th~8th, 9th~11th elements of the observation vector.
-    TOCABIAMPCfgPPO.algorithm.cartesian_angular_mirror = [(3,6)]
-    TOCABIAMPCfgPPO.algorithm.cartesian_linear_mirror = [(0,3), (6,9)]
-    TOCABIAMPCfgPPO.algorithm.cartesian_command_mirror = [(9,12)]
+    TOCABIAMPRandCfgPPO.algorithm.cartesian_angular_mirror = [(3,6)]
+    TOCABIAMPRandCfgPPO.algorithm.cartesian_linear_mirror = [(0,3), (6,9)]
+    TOCABIAMPRandCfgPPO.algorithm.cartesian_command_mirror = [(9,12)]
 # The following list indicate the ranges in the observation vector indices, for which switching places is necessary
-    TOCABIAMPCfgPPO.algorithm.switch_mirror = []
+    TOCABIAMPRandCfgPPO.algorithm.switch_mirror = []
 # The following list indicate the ranges in the observation vector indices, for which no mirroring is necessary.
-    TOCABIAMPCfgPPO.algorithm.no_mirror = []
+    TOCABIAMPRandCfgPPO.algorithm.no_mirror = []
 
-if TOCABIAMPCfgPPO.policy.encoder_dim is not None:
-    TOCABIAMPCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+if TOCABIAMPRandCfgPPO.policy.encoder_dim is not None:
+    TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
 
-TOCABIAMPCfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
-TOCABIAMPCfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
-TOCABIAMPCfg.rewards.scales.base_height *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
+TOCABIAMPRandCfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)
+TOCABIAMPRandCfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)
+TOCABIAMPRandCfg.rewards.scales.base_height *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)

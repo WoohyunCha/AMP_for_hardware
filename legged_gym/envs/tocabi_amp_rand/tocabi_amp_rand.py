@@ -42,8 +42,8 @@ from torch import Tensor
 from typing import Tuple, Dict
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.envs.base.legged_robot import LeggedRobot
-from legged_gym.envs.tocabi_amp.tocabi_amp_config import TOCABIAMPCfg
+from legged_gym.envs.base.base_task import BaseTask
+from legged_gym.envs.tocabi_amp_rand.tocabi_amp_rand_config import TOCABIAMPRandCfg
 from legged_gym.utils.terrain import Terrain
 from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from legged_gym.utils.helpers import class_to_dict
@@ -52,10 +52,42 @@ from rsl_rl.utils.utils import Normalizer_obs
 from legged_gym.envs.base import observation_buffer
 import xml.etree.ElementTree as ET
 
-class TOCABIAMP(LeggedRobot):
+class TOCABIAMPRand(BaseTask):
+
+    def __init__(self, cfg: TOCABIAMPRandCfg, sim_params, physics_engine, sim_device, headless):
+        """ Parses the provided config file,
+            calls create_sim() (which creates, simulation, terrain and environments),
+            initilizes pytorch buffers used during training
+
+        Args:
+            cfg (Dict): Environment config file
+            sim_params (gymapi.SimParams): simulation parameters
+            physics_engine (gymapi.SimType): gymapi.SIM_PHYSX (must be PhysX)
+            device_type (string): 'cuda' or 'cpu'
+            device_id (int): 0, 1, ...
+            headless (bool): Run without rendering if True
+        """
+        self.cfg = cfg
+        self.sim_params = sim_params
+        self.height_samples = None
+        self.debug_viz = False
+        self.init_done = False
+        self._parse_cfg(self.cfg)
+        if self.cfg.env.reference_state_initialization:
+            # self.amp_loader = AMPLoader(motion_files=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, model_file=self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR))
+            self.amp_loader = [] # AMPLoader(reference_dict=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, play=self.cfg.env.play)
+        super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
+        if not self.headless:
+            self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
+        self._init_buffers()
+        self._prepare_reward_function()
+        self.init_done = True
+        if hasattr(self, "_custom_init"):
+            self._custom_init(cfg)
+
 
     def _custom_init(self, cfg):
-        self.termination_height = torch.tensor(cfg.asset.termination_height, dtype=torch.float32, device=self.device) * self.base_init_state[2]
+        # self.termination_height = torch.tensor(cfg.asset.termination_height, dtype=torch.float32, device=self.device) * self.base_init_state[2]
         self.reference_state_initialization_prob = cfg.env.reference_state_initialization_prob
         self.normalizer_obs = None
         self.control_ticks = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
@@ -237,8 +269,8 @@ class TOCABIAMP(LeggedRobot):
 
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         self.reset_buf |= self.time_out_buf
-        self.height_buf = self.root_states[:, 2] < self.termination_height[0]
-        self.height_buf |= self.root_states[:,2] > self.termination_height[1]
+        self.height_buf = self.root_states[:, 2] < self.termination_height[:,0]
+        self.height_buf |= self.root_states[:,2] > self.termination_height[:,1]
         self.reset_buf |= self.height_buf
 
     def reset_idx(self, env_ids):
@@ -262,9 +294,16 @@ class TOCABIAMP(LeggedRobot):
         
         # reset robot states
         if self.cfg.env.reference_state_initialization:
-            frames = self.amp_loader.get_full_frame_batch(len(env_ids))
-            self._reset_dofs_amp(env_ids, frames)
-            self._reset_root_states_amp(env_ids, frames)
+            for env_id in env_ids:
+                loader_id = int(env_id / self.cfg.asset.num_morphologies)
+                frame = self.amp_loader[loader_id].get_full_frame()
+                self._reset_dofs_amp_single(env_id=env_id, frame=frame)
+                self._reset_root_states_amp_single(env_id=env_id, frame=frame)
+            self._reset_dofs_and_root_states(env_ids)
+
+            # frames = self.amp_loader.get_full_frame_batch(len(env_ids))
+            # self._reset_dofs_amp(env_ids, frames)
+            # self._reset_root_states_amp(env_ids, frames)
         else:
             self._reset_dofs(env_ids)
             self._reset_root_states(env_ids)
@@ -742,6 +781,25 @@ class TOCABIAMP(LeggedRobot):
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
                                               gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+        
+    def _reset_dofs_amp_single(self, env_id, frame):
+        """ Resets DOF position and velocities of selected environmments
+        Positions are randomly selected within 0.5:1.5 x default positions.
+        Velocities are set to zero.
+
+        Args:
+            env_ids (List[int]): Environemnt ids
+            frames: AMP frames to initialize motion with
+        """
+
+        self.dof_pos[env_id, self.num_actions:] = self.default_dof_pos[:, self.num_actions:]
+
+        self.dof_vel[env_id] = 0.
+
+        self.dof_pos[env_id, :self.num_actions] = AMPLoader.get_joint_pose(frame)
+
+        self.dof_vel[env_id, :self.num_actions] = AMPLoader.get_joint_vel(frame)       
+
 
     def _reset_root_states(self, env_ids):
         """ Resets ROOT states position and velocities of selected environmments
@@ -752,11 +810,11 @@ class TOCABIAMP(LeggedRobot):
         """
         # base position
         if self.custom_origins:
-            self.root_states[env_ids] = self.base_init_state
+            self.root_states[env_ids] = self.base_init_state[env_ids]
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
             self.root_states[env_ids, :2] += torch_rand_float(-1., 1., (len(env_ids), 2), device=self.device) # xy position within 1m of the center
         else:
-            self.root_states[env_ids] = self.base_init_state
+            self.root_states[env_ids] = self.base_init_state[env_ids]
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
         # base velocities
         self.root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
@@ -764,6 +822,29 @@ class TOCABIAMP(LeggedRobot):
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
                                                      gymtorch.unwrap_tensor(self.root_states),
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+    def _reset_root_states_single(self, env_id):
+        """ Resets ROOT states position and velocities of selected environmments
+            Sets base position based on the curriculum
+            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+        # base position
+        if self.custom_origins:
+            self.root_states[env_id] = self.base_init_state[env_id]
+            self.root_states[env_id, :3] += self.env_origins[env_id]
+            self.root_states[env_id, :2] += torch_rand_float(-1., 1., (1,2), device=self.device) # xy position within 1m of the center
+        else:
+            self.root_states[env_id] = self.base_init_state[env_id]
+            self.root_states[env_id, :3] += self.env_origins[env_id]
+        # base velocities
+        self.root_states[env_id, 7:13] = torch_rand_float(-0.5, 0.5, (1,6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
+        # env_ids_int32 = env_id.to(dtype=torch.int32).unsqueeze(0)
+        # self.gym.set_actor_root_state_tensor_indexed(self.sim,
+        #                                              gymtorch.unwrap_tensor(self.root_states),
+        #                                              gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
 
     def _reset_root_states_amp(self, env_ids, frames):
         """ Resets ROOT states position and velocities of selected environmments
@@ -789,6 +870,34 @@ class TOCABIAMP(LeggedRobot):
                                                      gymtorch.unwrap_tensor(self.root_states),
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
         
+    def _reset_root_states_amp_single(self, env_id, frame):
+        """ Resets ROOT states position and velocities of selected environmments
+            Sets base position based on the curriculum
+            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+        # base position
+        self._reset_root_states_single(env_id=env_id) 
+        # root_pos = AMPLoader.get_root_pos_batch(frames)
+        # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
+        # self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
+        root_orn = AMPLoader.get_root_rot(frame)
+        self.root_states[env_id, 3:7] = root_orn
+        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
+        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
+        self.root_states[env_id, 7:13] = torch_rand_float(-0., 0., (1,6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
+        # self.root_states[env_ids, 7] = torch_rand_float(-0.2, 0.2, (len(env_ids),1), device=self.device).squeeze(-1) # [7:10]: lin vel, [10:13]: ang vel
+
+
+    def _reset_dofs_and_root_states(self, env_ids):
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_dof_state_tensor_indexed(self.sim,
+                                            gymtorch.unwrap_tensor(self.dof_state),
+                                            gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+        self.gym.set_actor_root_state_tensor_indexed(self.sim,
+                                                    gymtorch.unwrap_tensor(self.root_states),
+                                                    gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
         
 
     def _push_robots(self):
@@ -1091,6 +1200,212 @@ class TOCABIAMP(LeggedRobot):
                 pos_value.append(float(i))
         return pos_value
 
+    def _create_robot_asset(self, robot_index):
+        source_asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+        source_asset_root = os.path.dirname(source_asset_path)
+        source_asset_file = os.path.basename(source_asset_path)
+        target_asset_file = os.path.splitext(source_asset_file)[0] + '_randomized.xml'
+        target_asset_path = os.path.join(source_asset_root, target_asset_file)
+
+        # set randomized link lengths
+        hip_randomize_scale = 1 + (2*np.random.random() - 1) * self.cfg.domain_rand.link_length_randomize_range
+        thigh_randomize_scale = 1 + (2*np.random.random() - 1) * self.cfg.domain_rand.link_length_randomize_range
+        shin_randomize_scale = 1 + (2*np.random.random() - 1) * self.cfg.domain_rand.link_length_randomize_range
+        ankle_randomize_scale = 1 + (2*np.random.random() - 1) * self.cfg.domain_rand.link_length_randomize_range
+
+        init_height = 0.
+
+        tree = ET.parse(source_asset_path)
+        root = tree.getroot()
+
+        # Iterate through all 'body' elements
+        for body in root.findall('.//body'):
+            body_name = body.get('name')
+
+            # Check if 'HipRoll_Link' is in the body's name
+            if 'Hip' in body_name:
+                # Fix the last component of 'pos' of the body
+                if 'pos' in body.attrib:
+                    pos_values = body.get('pos').split()
+                    pos_values[-1] = str(float(pos_values[-1]) * hip_randomize_scale)  # Replace the last component with A
+                    init_height += float(pos_values[-1])
+                    body.set('pos', ' '.join(pos_values))
+
+                # Fix the last component of 'pos' of the 'inertial' element under this body
+                inertial = body.find('inertial')
+                if inertial is not None and 'pos' in inertial.attrib:
+                    inertial_pos_values = inertial.get('pos').split()
+                    inertial_pos_values[-1] = str(float(inertial_pos_values[-1]) * hip_randomize_scale)  # Replace the last component with B
+                    inertial.set('pos', ' '.join(inertial_pos_values))
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * hip_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values)) 
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * hip_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values)) 
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * hip_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values))
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * hip_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values))
+            elif 'Thigh' in body_name:
+                if 'pos' in body.attrib:
+                    pos_values = body.get('pos').split()
+                    pos_values[-1] = str(float(pos_values[-1]) * hip_randomize_scale)  # Replace the last component with A
+                    body.set('pos', ' '.join(pos_values))
+                    init_height += float(pos_values[-1])# * np.cos(default_angle)
+
+                # Fix the last component of 'pos' of the 'inertial' element under this body
+                inertial = body.find('inertial')
+                if inertial is not None and 'pos' in inertial.attrib:
+                    inertial_pos_values = inertial.get('pos').split()
+                    inertial_pos_values[-1] = str(float(inertial_pos_values[-1]) * thigh_randomize_scale)  # Replace the last component with B
+                    inertial.set('pos', ' '.join(inertial_pos_values))
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * thigh_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values)) 
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * thigh_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values)) 
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * thigh_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values))
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * thigh_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values))
+            elif 'Knee' in body_name:
+                if 'pos' in body.attrib:
+                    pos_values = body.get('pos').split()
+                    pos_values[-1] = str(float(pos_values[-1]) * thigh_randomize_scale)  # Replace the last component with A
+                    body.set('pos', ' '.join(pos_values))
+                    init_height += float(pos_values[-1])  #* np.cos(default_angle)
+
+                # Fix the last component of 'pos' of the 'inertial' element under this body
+                inertial = body.find('inertial')
+                if inertial is not None and 'pos' in inertial.attrib:
+                    inertial_pos_values = inertial.get('pos').split()
+                    inertial_pos_values[-1] = str(float(inertial_pos_values[-1]) * shin_randomize_scale)  # Replace the last component with B
+                    inertial.set('pos', ' '.join(inertial_pos_values))
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * shin_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values)) 
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * shin_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values)) 
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * shin_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values))
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * shin_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values))
+            elif 'AnkleCenter' in body_name:
+                if 'pos' in body.attrib:
+                    pos_values = body.get('pos').split()
+                    pos_values[-1] = str(float(pos_values[-1]) * shin_randomize_scale)  # Replace the last component with A
+                    body.set('pos', ' '.join(pos_values))
+                    init_height += float(pos_values[-1])
+
+                # Fix the last component of 'pos' of the 'inertial' element under this body
+                inertial = body.find('inertial')
+                if inertial is not None and 'pos' in inertial.attrib:
+                    inertial_pos_values = inertial.get('pos').split()
+                    inertial_pos_values[-1] = str(float(inertial_pos_values[-1]) * ankle_randomize_scale)  # Replace the last component with B
+                    inertial.set('pos', ' '.join(inertial_pos_values))
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values)) 
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values)) 
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values))
+                for geom in body.findall("./geom[@class='viz']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values))
+
+            # Check if 'Foot_Link' is in the body's name
+            if 'AnkleRoll' in body_name:
+                # Fix the last component of 'pos' of the 'geom' element with class 'cls' under this body
+                for inertial in body.findall(".//inertial"):
+                    if 'pos' in inertial.attrib:
+                        inertial_pos_values = inertial.get('pos').split()
+                        inertial_pos_values[-1] = str(float(inertial_pos_values[-1]) * ankle_randomize_scale)  # Replace the last component with B
+                        inertial.set('pos', ' '.join(inertial_pos_values))
+                for geom in body.findall(".//geom[@class='cls']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values)) 
+                for geom in body.findall(".//geom[@class='cls']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values)) 
+                for geom in body.findall(".//geom[@class='viz']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        geom_pos_values[-1] = str(float(geom_pos_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('pos', ' '.join(geom_pos_values))
+                for geom in body.findall(".//geom[@class='viz']"):
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        geom_sz_values[-1] = str(float(geom_sz_values[-1]) * ankle_randomize_scale)  # Replace the last component with C
+                        geom.set('size', ' '.join(geom_sz_values))
+            
+            if 'Foot_Link' in body_name:
+                for geom in body.findall("./geom[@class='cls']"):
+                    if 'pos' in geom.attrib:
+                        geom_pos_values = geom.get('pos').split()
+                        init_height += float(geom_pos_values[-1])
+                    if 'size' in geom.attrib:
+                        geom_sz_values = geom.get('size').split()
+                        init_height+= float(geom_sz_values[-1])
+        # Write the modified XML to the output file
+
+        for body in root.findall('.//body[@name="base_link"]'):
+        # Get the current position attribute
+            current_pos_values = body.get('pos').split()
+            current_pos_values[-1] = str(-0.5*init_height)  # Replace the last component with C
+            body.set('pos', ' '.join(current_pos_values))
+            # Print the new position (optional)
+            print(f"New position: {current_pos_values}")
+        tree.write(target_asset_path, encoding='utf-8', xml_declaration=True)
+        return target_asset_path
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -1100,75 +1415,89 @@ class TOCABIAMP(LeggedRobot):
                 2.3 create actor with these properties and add them to the env
              3. Store indices of different bodies of the robot
         """
-        asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
-        asset_root = os.path.dirname(asset_path)
-        asset_file = os.path.basename(asset_path)
 
-        asset_options = gymapi.AssetOptions()
-        asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
-        asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
-        asset_options.replace_cylinder_with_capsule = self.cfg.asset.replace_cylinder_with_capsule
-        asset_options.flip_visual_attachments = self.cfg.asset.flip_visual_attachments
-        asset_options.fix_base_link = self.cfg.asset.fix_base_link
-        asset_options.density = self.cfg.asset.density
-        asset_options.angular_damping = self.cfg.asset.angular_damping
-        asset_options.linear_damping = self.cfg.asset.linear_damping
-        asset_options.max_angular_velocity = self.cfg.asset.max_angular_velocity
-        asset_options.max_linear_velocity = self.cfg.asset.max_linear_velocity
-        asset_options.armature = self.cfg.asset.armature
-        asset_options.thickness = self.cfg.asset.thickness
-        asset_options.disable_gravity = self.cfg.asset.disable_gravity
-
-        robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
-        self.num_dof = self.gym.get_asset_dof_count(robot_asset)
-        self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
-        dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
-        rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(robot_asset)
-        if self.cfg.asset.asset_is_mjcf:
-            actuator_props = self.gym.get_asset_actuator_properties(robot_asset) 
-        # save body names from the asset
-        body_names = self.gym.get_asset_rigid_body_names(robot_asset)
-        self.body_names_dict = self.gym.get_asset_rigid_body_dict(robot_asset)
-        self.body_to_shapes = self.gym.get_asset_rigid_body_shape_indices(robot_asset)
-        self.dof_names = self.gym.get_asset_dof_names(robot_asset)
-        self.num_bodies = len(body_names)
-        self.num_dofs = len(self.dof_names)
-        feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
-        penalized_contact_names = []
-        for name in self.cfg.asset.penalize_contacts_on:
-            penalized_contact_names.extend([s for s in body_names if name in s])
-        termination_contact_names = []
-        for name in self.cfg.asset.terminate_after_contacts_on:
-            termination_contact_names.extend([s for s in body_names if name in s])
-
-        base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
-        base_init_state_list[2] = self._from_xml(asset_path)[2] * 1.
-        self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
-        start_pose = gymapi.Transform()
-        start_pose.p = gymapi.Vec3(*self.base_init_state[:3])
-
-        self._get_env_origins()
-        env_lower = gymapi.Vec3(0., 0., 0.)
-        env_upper = gymapi.Vec3(0., 0., 0.)
+        self.termination_height = torch.zeros((self.num_envs,2), dtype=torch.float32, device=self.device)
+        self.base_init_state = torch.zeros((self.num_envs, 13), dtype=torch.float32, device=self.device)
         self.actor_handles = []
         self.envs = []
+        base_init_state_list = None
+        start_pose = None
+        feet_names = None
         for i in range(self.num_envs):
             # create env instance
+            if i % self.cfg.asset.num_morphologies == 0:
+                print("Forming new morphology, i : ", i)
+                asset_path = self._create_robot_asset(i)
+                self.amp_loader.append(AMPLoader(reference_dict=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, play=self.cfg.env.play, target_model_file=asset_path)) # Retarget tocabi motion to randomly generated model
+                asset_root = os.path.dirname(asset_path)
+                asset_file = os.path.basename(asset_path)
+
+                asset_options = gymapi.AssetOptions()
+                asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
+                asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
+                asset_options.replace_cylinder_with_capsule = self.cfg.asset.replace_cylinder_with_capsule
+                asset_options.flip_visual_attachments = self.cfg.asset.flip_visual_attachments
+                asset_options.fix_base_link = self.cfg.asset.fix_base_link
+                asset_options.density = self.cfg.asset.density
+                asset_options.angular_damping = self.cfg.asset.angular_damping
+                asset_options.linear_damping = self.cfg.asset.linear_damping
+                asset_options.max_angular_velocity = self.cfg.asset.max_angular_velocity
+                asset_options.max_linear_velocity = self.cfg.asset.max_linear_velocity
+                asset_options.armature = self.cfg.asset.armature
+                asset_options.thickness = self.cfg.asset.thickness
+                asset_options.disable_gravity = self.cfg.asset.disable_gravity
+
+                robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+                self.num_dof = self.gym.get_asset_dof_count(robot_asset)
+                self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
+                dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
+                rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(robot_asset)
+                if self.cfg.asset.asset_is_mjcf:
+                    actuator_props = self.gym.get_asset_actuator_properties(robot_asset) 
+                # save body names from the asset
+                body_names = self.gym.get_asset_rigid_body_names(robot_asset)
+                self.body_names_dict = self.gym.get_asset_rigid_body_dict(robot_asset)
+                self.body_to_shapes = self.gym.get_asset_rigid_body_shape_indices(robot_asset)
+                self.dof_names = self.gym.get_asset_dof_names(robot_asset)
+                self.num_bodies = len(body_names)
+                self.num_dofs = len(self.dof_names)
+                feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
+                penalized_contact_names = []
+                for name in self.cfg.asset.penalize_contacts_on:
+                    penalized_contact_names.extend([s for s in body_names if name in s])
+                termination_contact_names = []
+                for name in self.cfg.asset.terminate_after_contacts_on:
+                    termination_contact_names.extend([s for s in body_names if name in s])
+
+                base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
+                base_init_state_list[2] = self._from_xml(asset_path)[2] * 1.
+            self.base_init_state[i] = to_torch(base_init_state_list, device=self.device, requires_grad=False)
+            start_pose = gymapi.Transform()
+            start_pose.p = gymapi.Vec3(*self.base_init_state[i,:3])
+            self.termination_height[i, 0] = self.cfg.asset.termination_height[0] * self.base_init_state[i,2]
+            self.termination_height[i, 1] = self.cfg.asset.termination_height[1] * self.base_init_state[i,2]
+
+            self._get_env_origins()
+            env_lower = gymapi.Vec3(0., 0., 0.)
+            env_upper = gymapi.Vec3(0., 0., 0.)
+
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
             pos = self.env_origins[i].clone()
             pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
-            rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
+            rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i) # process link friction. This is agent agnostic
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
-            dof_props = self._process_dof_props(dof_props_asset, i)
+            dof_props = self._process_dof_props(dof_props_asset, i) # process joint limits, armature, damping. This may need to be changed for each agent for they may have different joint limits
             actuator_props = self._process_actuator_props(actuator_props, i)
             self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
-            body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
-            body_props = self._process_rigid_body_props(body_props, i)
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle) # com, inertia, mass
+            body_props = self._process_rigid_body_props(body_props, i) # randomize mass of each link
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
+
+
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
@@ -1301,3 +1630,100 @@ class TOCABIAMP(LeggedRobot):
             print("Set normalizer to eval mode")
             self.normalizer_obs.eval()
     #------------ reward functions----------------
+    def _reward_lin_vel_z(self):
+        # Penalize z axis base linear velocity
+        return torch.square(self.base_lin_vel[:, 2])
+    
+    def _reward_ang_vel_xy(self):
+        # Penalize xy axes base angular velocity
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+    
+    def _reward_orientation(self):
+        # Penalize non flat base orientation
+        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+
+    def _reward_base_height(self):
+        # Penalize base height away from target
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        return torch.exp(-10.0*torch.square(base_height - self.cfg.rewards.base_height_target))
+    
+    def _reward_torques(self):
+        # Penalize torques
+        return torch.sum(torch.square(self.torques), dim=1)
+
+    def _reward_dof_vel(self):
+        # Penalize dof velocities
+        return torch.sum(torch.square(self.dof_vel), dim=1)
+    
+    def _reward_dof_acc(self):
+        # Penalize dof accelerations
+        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
+    
+    def _reward_action_rate(self):
+        # Penalize changes in actions
+        return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
+    
+    def _reward_collision(self):
+        # Penalize collisions on selected bodies
+        return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
+    
+    def _reward_termination(self):
+        # Terminal reward / penalty
+        return self.reset_buf * ~self.time_out_buf
+    
+    def _reward_dof_pos_limits(self):
+        # Penalize dof positions too close to the limit
+        out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
+        out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
+        return torch.sum(out_of_limits, dim=1)
+
+    def _reward_dof_vel_limits(self):
+        # Penalize dof velocities too close to the limit
+        # clip to max error = 1 rad/s per joint to avoid huge penalties
+        return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+
+    def _reward_torque_limits(self):
+        # penalize torques too close to the limit
+        return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
+
+    def _reward_tracking_lin_vel(self):
+        # Tracking of linear velocity commands (xy axes)
+        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        # _rew_lin_vel_x = 0.6 * torch.exp(-3.0 *torch.square(self.commands[:, 0] - self.base_lin_vel[:, 0]))
+        # _rew_lin_vel_y = 0.2 * torch.exp(-3.0 *torch.square(self.commands[:, 1] - self.base_lin_vel[:, 1]))
+        # print("reward calc og : ", torch.exp(-lin_vel_error*3))
+        # print("reward calc og bad : ", torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma))
+        # print("reward calc : ", _rew_lin_vel_x)
+        # return _rew_lin_vel_x+_rew_lin_vel_y
+        return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)
+    
+    def _reward_tracking_ang_vel(self):
+        # Tracking of angular velocity commands (yaw) 
+        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
+        return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)
+
+    def _reward_feet_air_time(self):
+        # Reward long steps
+        # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        contact_filt = torch.logical_or(contact, self.last_contacts) 
+        self.last_contacts = contact
+        first_contact = (self.feet_air_time > 0.) * contact_filt
+        self.feet_air_time += self.dt
+        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
+        rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
+        self.feet_air_time *= ~contact_filt
+        return rew_airTime
+    
+    def _reward_stumble(self):
+        # Penalize feet hitting vertical surfaces
+        return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\
+             5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
+        
+    def _reward_stand_still(self):
+        # Penalize motion at zero commands
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+
+    def _reward_feet_contact_forces(self):
+        # penalize high contact forces
+        return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)

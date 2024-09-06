@@ -96,7 +96,7 @@ def play(args):
     camera_vel = np.array([1., 1., 0.])
     camera_direction = np.array(env_cfg.viewer.lookat) - np.array(env_cfg.viewer.pos)
     img_idx = 0
-    for i in range(10*int(env.max_episode_length)):
+    for i in range(5*int(env.max_episode_length)):
         # print(obs)
         # if normalizer is not None:
         #     obs = normalizer(obs)
@@ -144,6 +144,8 @@ def play(args):
                     logger.log_rewards(infos["episode"], num_episodes)
         elif i==stop_rew_log:
             logger.print_rewards()
+
+    env.destroy_sim()
 
 if __name__ == '__main__':
     EXPORT_POLICY = True
