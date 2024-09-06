@@ -231,18 +231,21 @@ class AMPOnPolicyRunner:
                     amp_obs = torch.clone(next_amp_obs)
                     self.alg.process_env_step(rewards, dones, infos, next_amp_obs_with_term)
                     
-                    if self.log_dir is not None:
+                    # if self.log_dir is not None:
                         # Book keeping
-                        if 'episode' in infos:
-                            ep_infos.append(infos['episode'])
-                        cur_reward_sum += rewards
-                        cur_episode_length += 1
-                        new_ids = (dones > 0).nonzero(as_tuple=False)
-                        rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
-                        lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
-                        amprewbuffer.extend(amp_rewards.cpu().numpy().tolist())
-                        cur_reward_sum[new_ids] = 0
-                        cur_episode_length[new_ids] = 0
+                    if 'episode' in infos:
+                        ep_infos.append(infos['episode'])
+                    cur_reward_sum += rewards
+                    cur_episode_length += 1
+                    new_ids = (dones > 0).nonzero(as_tuple=False)
+                    rewbuffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                    lenbuffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
+                    amprewbuffer.extend(amp_rewards.cpu().numpy().tolist())
+                    cur_reward_sum[new_ids] = 0
+                    cur_episode_length[new_ids] = 0
+
+                    if len(lenbuffer) > 0 and statistics.mean(lenbuffer) > self.env.max_episode_length * 0.8:
+                        self.env.start_perturb = True
 
                 stop = time.time()
                 collection_time = stop - start
@@ -280,7 +283,6 @@ class AMPOnPolicyRunner:
             }
 
             if it%10 == 0:
-
                 self.log_wandb(wandb_dict, locals())
 
             ep_infos.clear()
@@ -464,6 +466,7 @@ class AMPOnPolicyRunner:
             wandb_dict['Loss/AMP'] = locs['mean_amp_loss']
             wandb_dict['Loss/AMP_grad'] = locs['mean_grad_pen_loss']
             wandb_dict['Loss/learning_rate'] = self.alg.learning_rate
+            wandb_dict['perturbation_flag'] = 1. if self.env.start_perturb else 0
             if locs['ep_infos']:
                 for key in locs['ep_infos'][0]:
                     infotensor = torch.tensor([], device=self.device)
