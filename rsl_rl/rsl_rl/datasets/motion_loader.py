@@ -84,6 +84,7 @@ class AMPLoader:
             preload_transitions=False,
             num_preload_transitions=1000000,
             reference_dict={}, play=False, iterations=3000,
+            target_model_file=MJCF_file
             ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
@@ -110,6 +111,7 @@ class AMPLoader:
             AMPLoader.REFERENCE_START_INDEX = int(reference_start_index)
             AMPLoader.REFERENCE_END_INDEX = int(reference_end_index)
             AMPLoader.HZ = hz
+            motion_weight = info['weight']
             
             print(motion_file)
             self.trajectory_names.append(motion_file.split('.')[0])
@@ -128,16 +130,16 @@ class AMPLoader:
                 #         AMPLoader.POS_SIZE:
                 #             (AMPLoader.POS_SIZE +
                 #              AMPLoader.ROT_SIZE)] = root_rot
-                if (model_file == MJCF_file or model_file == ''): 
+                if (model_file == target_model_file or model_file == ''): 
                     print("No retargetting motion")
                     processed_data_full, info = self.process_data(motion_data, i)
                     processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
 
                 else:
                     print("RETARGET REFERENCE MOTIONS")
-                    print("Source file : ", MJCF_file)
+                    print("Target file : ", target_model_file)
                     print("Target file : ", info['xml'])
-                    motion_retarget = MotionRetarget(source_model_path=model_file, target_model_path=MJCF_file) # model_file is the source
+                    motion_retarget = MotionRetarget(source_model_path=model_file, target_model_path=target_model_file) # model_file is the source
                     processed_data_full, _ = motion_retarget.retarget(motion_data, play, iterations)
                     processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
 
@@ -150,7 +152,8 @@ class AMPLoader:
 
                 self.trajectory_idxs.append(i)
                 self.trajectory_weights.append(
-                    float(motion_json["MotionWeight"]))
+                    # float(motion_json["MotionWeight"]))
+                    float(motion_weight))
                 frame_duration = float(motion_data[1,AMPLoader.FRAME_TIME] - motion_data[0,AMPLoader.FRAME_TIME])
                 self.trajectory_frame_durations.append(frame_duration)
                 traj_len = (reference_end_index-reference_start_index - 1) * frame_duration
@@ -329,8 +332,8 @@ class AMPLoader:
 
         # root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
         root_rot0, root_rot1 = AMPLoader.get_root_rot(frame0), AMPLoader.get_root_rot(frame1)
-        linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
-        angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
+        # linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
+        # angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
         joints0, joints1 = AMPLoader.get_joint_pose(frame0), AMPLoader.get_joint_pose(frame1)
         joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
         foot_pos0, foot_pos1 = AMPLoader.get_foot_pos(frame0), AMPLoader.get_foot_pos(frame1)
