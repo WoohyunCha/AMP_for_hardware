@@ -916,7 +916,8 @@ class MotionRetarget():
                 joint_quat_local_retarget[:, 4*(self.JOINT_MAPPING[joint_name]-7):4*(self.JOINT_MAPPING[joint_name]-6)] = target_local_joint_quat[joint_name]
 
         # # 4. Solve numerical IK from joint positions, foot positions and orientation
-        weight_joint_pos, weight_foot_quat, weight_joint_pose, weight_hip_pose, weight_joint_vel = 1.2, .1, .1, .5, .1
+        weight_joint_pos, weight_foot_quat, weight_joint_pose, weight_hip_pose, weight_joint_vel = 1., 0., .5, 0., .1
+        # weight_joint_pos, weight_foot_quat, weight_joint_pose, weight_hip_pose, weight_joint_vel = 1.2, 0.1, .1, 0.1, .1 For CMU refernece
         weight_norm = (weight_joint_pos+weight_foot_quat+weight_joint_pose+weight_hip_pose)
         weight_joint_pos /= weight_norm
         weight_foot_quat /= weight_norm
@@ -947,7 +948,8 @@ class MotionRetarget():
             mask = [0,1,2,3,6,7,8,9]
             hip_mas = [0,1, 6,7]
             # mask_ref = [i+JOINT_POSE_START_IDX for i in mask]
-            joint_pose_cost = torch.nn.MSELoss()(x[:, mask], TOCABI_INIT_POS_TORCH[:, mask])
+            # joint_pose_cost = torch.nn.MSELoss()(x[:, mask], TOCABI_INIT_POS_TORCH[:, mask]) # For CMU reference
+            joint_pose_cost = torch.nn.MSELoss()(x, source_qpos)
             joint_pos_cost = torch.nn.MSELoss()(x_local_joint_pos_tensor, joint_pos_local_retarget)
             joint_vel_cost = torch.nn.MSELoss()(x[1:], x[:-1])
             hip_pose_cost = torch.nn.MSELoss()(x[:, hip_mas], TOCABI_INIT_POS_TORCH[:, hip_mas])
@@ -967,7 +969,7 @@ class MotionRetarget():
             total_cost = weight_joint_pos*joint_pos_cost + weight_joint_pose*joint_pose_cost + weight_foot_quat*foot_quat_cost + weight_hip_pose*hip_pose_cost + weight_joint_vel*joint_vel_cost
             return torch.sum(total_cost), joint_pos_cost, joint_pose_cost, (1 - cosine_loss(zero_quat, x_Lfoot_quat)).mean(), (1 - cosine_loss(zero_quat, x_Rfoot_quat)).mean()
         
-        n_iterations = iterations #TODO
+        n_iterations = iterations
         if play:
             n_iterations = 0
         # q_opt = torch.zeros((reference_length, 12), dtype=torch.float32, requires_grad=True, device='cuda:0')
@@ -991,7 +993,7 @@ class MotionRetarget():
                 print(f"Iteration {i}, Cost: {cost.item()}")
 
             # Optionally, you can add some stopping criterion based on the change in cost or other conditions
-            if (cost.item() < 1e-3) or optimizer.param_groups[0]['lr'] < 1e-6:
+            if optimizer.param_groups[0]['lr'] < 1e-6:
                 print("Stopping criterion met")
                 break
             assert ~torch.any(~torch.isfinite(q_opt)), f"Cannot solve IK! Cost : {cost_function(q_opt)}"
@@ -1011,7 +1013,6 @@ class MotionRetarget():
         assert q_vel_opt.shape[0] == L_foot_pos_opt.shape[0]
         # time = torch.tensor([i for i in range(q_vel_opt.shape[0])], dtype=torch.float32, device='cuda:0').view(-1,1)
         retarget_reference = torch.cat((retarget_global_joint_quat['virtual_joint'], q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
-        #TODO composition of retarget reference = [time, base pos, base_rpy, base linvel, base angvel, qpos, qvel, lfoot pos, lfoot rpy, rfoot pos, rfoot rpy]
 
         target_reference = torch.zeros((q_opt.shape[0], 3*13), requires_grad=False, device='cuda:0')
         for joint_name, _ in self.JOINT_MAPPING.items():

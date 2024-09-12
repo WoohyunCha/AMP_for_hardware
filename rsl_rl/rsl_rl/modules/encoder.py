@@ -8,11 +8,13 @@ class CNNEncoder(nn.Module):
 
         # Layer 1: Conv1D with kernel size 6, 32 filters, and stride 3
         self.conv1 = nn.Conv1d(in_channels=input_dim, out_channels=32, kernel_size=6, stride=3, padding=0)
-        self.relu1 = nn.ReLU()
+        # self.relu1 = nn.ReLU()
+        self.activation1 = nn.Tanh()
 
         # Layer 2: Conv1D with kernel size 4, 16 filters, and stride 2
         self.conv2 = nn.Conv1d(in_channels=32, out_channels=16, kernel_size=4, stride=2, padding=0)
-        self.relu2 = nn.ReLU()
+        # self.relu2 = nn.ReLU()
+        self.activation2 = nn.Tanh()
 
         # Adaptive average pooling to aggregate the time dimension
         # self.pooling = nn.AdaptiveAvgPool1d(1)
@@ -28,6 +30,7 @@ class CNNEncoder(nn.Module):
 
         # self.register_buffer('obs_buf', torch.zeros(self.num_envs, self.num_obs_total, dtype=torch.float))
         # self.obs_buf = torch.zeros(self.num_envs, self.num_obs_total, dtype=torch.float)
+        self.activation3 = nn.Tanh()
 
 
 
@@ -36,11 +39,11 @@ class CNNEncoder(nn.Module):
         
         # Apply first convolutional layer
         x = self.conv1(x)  # Output shape: (B, 32, 15)
-        x = self.relu1(x)
+        x = self.activation1(x)
 
         # Apply second convolutional layer
         x = self.conv2(x)  # Output shape: (B, 16, 6)
-        x = self.relu2(x)
+        x = self.activation2(x)
 
         # Apply pooling across the time dimension (adaptive average pooling)
         # x = self.pooling(x)  # Output shape: (B, 16, 1)
@@ -51,6 +54,7 @@ class CNNEncoder(nn.Module):
         # Fully connected layers
         # x = self.fc1(x)  # Output shape: (B, 128)
         x = self.fc2(x)
+        x = self.activation3(x)
         return x
     
     # def to(self, *args, **kwargs):

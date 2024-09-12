@@ -298,7 +298,7 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
         # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_random.xml'
         file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
-        num_morphologies = 128 # num_envs must be a multiple of num_morphologies
+        num_morphologies = 64 # num_envs must be a multiple of num_morphologies
 
         asset_is_mjcf = True
         name = "tocabi"
@@ -307,7 +307,7 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
         penalize_contacts_on = []
         # penalize_contacts_on = ['bolt_lower_leg_right_side', 'bolt_body', 'bolt_hip_fe_left_side', 'bolt_hip_fe_right_side', ' bolt_lower_leg_left_side', 'bolt_shoulder_fe_left_side', 'bolt_shoulder_fe_right_side', 'bolt_trunk', 'bolt_upper_leg_left_side', 'bolt_upper_leg_right_side']
         # terminate_after_contacts_on = ['base', 'Knee', 'Thigh', 'Head', 'Wrist']        
-        terminate_after_contacts_on = ['base', 'Knee', 'Thigh',  'Head', 'Wrist', 'Foot_Redundant']        
+        terminate_after_contacts_on = ['base', 'Knee', 'Thigh', 'Wrist',  'Head',  'Foot_Redundant']        
         termination_height = [0.8, 1.1]
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         disable_gravity = False
@@ -343,8 +343,8 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
         randomize_delay = False
         delay_range_s = 0.01
         # randomize_delay_interval_s = 10
-    
-        link_length_randomize_range = 0.2
+
+        link_length_randomize_range = 0.3
 
     class noise:
         add_noise = False
@@ -372,11 +372,13 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.82
+        contact_force_sigma = 100.
         # tracking_sigma = 0.5
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
             tracking_lin_vel = 1.5 
-            tracking_ang_vel = 0.75 #0.5 
+            tracking_ang_vel = .75 #0.5
+            feet_contact_forces = 0. # 0.1
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
@@ -414,7 +416,7 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
             lin_vel_x = [0., 1.] # min max [m/s]
             lin_vel_y = [-0., 0.]   # min max [m/s]
             ang_vel_yaw = [-0., 0.]    # min max [rad/s]
-            heading = [0, 0]
+            heading = [-0., 0.]
 
 
 
@@ -455,7 +457,7 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
             contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
 class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
-    runner_class_name = 'AMPOnPolicyRunner'
+    runner_class_name = 'AMPOnPolicyRunnerRand'
     seed = 1
 
     class policy:
@@ -476,7 +478,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
 
         # rnn_num_layers = 1
 
-        encoder_dim = 32
+        encoder_dim = 8
         encoder_history_steps = 50
         encoder_skips = 5
         input_dim = TOCABIAMPRandCfg.env.num_observations
@@ -484,7 +486,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         value_loss_coef = 1. #.5
         entropy_coef = 0.01
-        amp_replay_buffer_size = 100000
+        amp_replay_buffer_size = 1000000
         num_learning_epochs = 5
         num_mini_batches = 4
         disc_coef = 1
@@ -495,25 +497,25 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
 
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
-        experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
+        experiment_name = 'tocabi_amp_rand' # should be the same as 'env' in env.py and env_config.py 
         # algorithm_class_name = 'AMPPPOSym'
-        algorithm_class_name = 'AMPPPOSym'
+        algorithm_class_name = 'AMPPPOSymMorph'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
-        max_iterations = 6000 # number of policy updates
+        max_iterations = 20000 # number of policy updates
         num_steps_per_env = 24 #24 # per iteration, 32 in isaacgymenvs
 
         amp_reward_coef = 2.0
         amp_motion_files = REFERENCE_DICT
-        amp_num_preload_transitions = 2000000
+        amp_num_preload_transitions =  2000000
         amp_task_reward_lerp = 0.3
         amp_discr_hidden_dims = [256, 256]
 
         min_normalized_std = [0.05, 0.05, 0.05] * 4
-        LOG_WANDB = False
+        LOG_WANDB = True
         wgan = False
 
-if TOCABIAMPRandCfgPPO.runner.algorithm_class_name == 'AMPPPOSym':
+if 'Sym' in TOCABIAMPRandCfgPPO.runner.algorithm_class_name:
     TOCABIAMPRandCfgPPO.algorithm.include_history_steps = TOCABIAMPRandCfg.env.include_history_steps
     TOCABIAMPRandCfgPPO.algorithm.mirror = {'HipPitch': (2,8), 
         'KneePitch': (3,9), 

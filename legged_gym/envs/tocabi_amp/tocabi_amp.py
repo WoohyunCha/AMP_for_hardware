@@ -735,9 +735,9 @@ class TOCABIAMP(LeggedRobot):
 
         self.dof_vel[env_ids] = 0.
 
-        self.dof_pos[env_ids, :self.num_actions] = AMPLoader.get_joint_pose_batch(frames)
+        self.dof_pos[env_ids, :self.num_actions] = AMPLoader.get_joint_pose_batch(frames).to(torch.float32)
 
-        self.dof_vel[env_ids, :self.num_actions] = AMPLoader.get_joint_vel_batch(frames)       
+        self.dof_vel[env_ids, :self.num_actions] = AMPLoader.get_joint_vel_batch(frames).to(torch.float32)     
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
@@ -777,7 +777,7 @@ class TOCABIAMP(LeggedRobot):
         # root_pos = AMPLoader.get_root_pos_batch(frames)
         # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
         # self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
-        root_orn = AMPLoader.get_root_rot_batch(frames)
+        root_orn = AMPLoader.get_root_rot_batch(frames).to(torch.float32)
         self.root_states[env_ids, 3:7] = root_orn
         # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
         # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
@@ -1301,3 +1301,8 @@ class TOCABIAMP(LeggedRobot):
             print("Set normalizer to eval mode")
             self.normalizer_obs.eval()
     #------------ reward functions----------------
+    def _reward_feet_contact_forces(self):
+        # penalize high contact forces
+        return (1-torch.exp(-(torch.norm(torch.clamp(self.contact_forces[:, self.feet_indices[0], 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1) \
+                                                            + torch.norm(torch.clamp(self.contact_forces[:, self.feet_indices[1], 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1)) / self.cfg.rewards.contact_force_sigma))
+        # return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)

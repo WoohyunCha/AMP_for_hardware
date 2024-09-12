@@ -111,7 +111,7 @@ REFERENCE_DICT = {
 class TOCABIAMPCfg( LeggedRobotCfg ):
 
     class env( LeggedRobotCfg.env ):
-        num_envs = 16
+        num_envs = 4096
         include_history_steps = 10  # Number of steps of history to include.
         skips = 2 # Number of steps to skip between steps in history
         num_observations = 48 # change 42
@@ -294,9 +294,9 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/urdf/tocabi.urdf' 
 
-        # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
         # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_random.xml'
-        file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
+        # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
 
         asset_is_mjcf = True
         name = "tocabi"
@@ -318,18 +318,18 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         # fix_base_link = True
           
     class domain_rand:
-        randomize_friction = True
+        randomize_friction = False
         friction_range = [0., 2.]
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [.6, 1.4]
         randomize_link_mass = False
         added_link_mass_range = [.9, 1.1]
-        push_robots = True
+        push_robots = False
         push_interval_s = 5
         max_push_vel_xy = 0.2
-        randomize_torque = True
+        randomize_torque = False
         torque_constant_range = 0.1
-        randomize_joints = True
+        randomize_joints = False
         damping_range = [0., 2.9]
         armature_range = [0.6, 1.4]
         dof_friction_range = [0.6, 1.4]
@@ -338,12 +338,12 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         stiffness_multiplier_range = [0.9, 1.1]
         damping_multiplier_range = [0.9, 1.1]
 
-        randomize_delay = True
+        randomize_delay = False
         delay_range_s = 0.01
         # randomize_delay_interval_s = 10
     
     class noise:
-        add_noise = True
+        add_noise = False
         noise_level = .001
         noise_dist = 'uniform' # gaussian
         class noise_scales:
@@ -355,7 +355,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             height_measurements = 10
     
     class bias:
-        add_bias = True
+        add_bias = False
         bias_dist = 'uniform' # gaussian
         class bias_scales:
             dof_pos = 0.03
@@ -368,6 +368,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.9
         base_height_target = 0.82
+        contact_force_sigma = 100.
         # tracking_sigma = 0.5
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
@@ -386,6 +387,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             action_rate = 0.0
             stand_still = 0.0
             dof_pos_limits = 0.0
+            feet_contact_forces = 0.1
 
     class normalization:
         class obs_scales:
@@ -472,7 +474,7 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
 
         # rnn_num_layers = 1
 
-        encoder_dim = 32
+        encoder_dim = 8
         encoder_history_steps = 50
         encoder_skips = 5
         input_dim = TOCABIAMPCfg.env.num_observations
@@ -485,7 +487,7 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         num_mini_batches = 4
         disc_coef = 1
         bounds_loss_coef = 10
-        disc_grad_pen = 5.
+        disc_grad_pen = 2.
         learning_rate = 3.e-5
 
 
@@ -496,7 +498,7 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = 'AMPPPOSym'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
-        max_iterations = 6000 # number of policy updates
+        max_iterations = 5000 # number of policy updates
         num_steps_per_env = 24 #24 # per iteration, 32 in isaacgymenvs
 
         amp_reward_coef = 2.0
@@ -506,8 +508,8 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         amp_discr_hidden_dims = [256, 256]
 
         min_normalized_std = [0.05, 0.05, 0.05] * 4
-        LOG_WANDB = False
-        wgan = False
+        LOG_WANDB = True
+        wgan = True
 
 if TOCABIAMPCfgPPO.runner.algorithm_class_name == 'AMPPPOSym':
     TOCABIAMPCfgPPO.algorithm.include_history_steps = TOCABIAMPCfg.env.include_history_steps

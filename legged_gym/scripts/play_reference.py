@@ -50,12 +50,13 @@ import glob
 # REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/91/xml/91.xml'
 # REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/69/xml/69.xml'
 REFERENCE_DICT = {
-    '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_walk_1.json' :{
-        'xml': '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/07/xml/07.xml',
-        'hz' : 120,
-        'start_time' : 0.,
-        'end_time' : 2.6,
-        'model_dof' : 12
+    '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json': {
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+        'hz' : 2000,
+        'start_time' : 4.5,
+        'end_time' : 8.1,
+        'model_dof' : 33,
+        'weight' : 1.
     },
 }
 REFERENCE_JSON, REFERENCE_INFO = next(iter(REFERENCE_DICT.items()))
@@ -66,6 +67,7 @@ RENDER_HZ = 100
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
+    env_cfg.asset.num_morphologies = 1
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 2)
     env_cfg.env.amp_motion_files = REFERENCE_DICT
     env_cfg.terrain.num_rows = 5
@@ -87,9 +89,14 @@ def play(args):
     train_cfg.runner.amp_num_preload_transitions = 100
 
     # prepare environment
+
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
-    # env.dt = 1/REFERENCE_HZ
-    motion_tensor = AMPLoader('cuda:0', env.dt, reference_dict=REFERENCE_DICT).trajectories[0]
+    source_asset_path = env_cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+    source_asset_root = os.path.dirname(source_asset_path)
+    source_asset_file = os.path.basename(source_asset_path)
+    target_asset_file = os.path.splitext(source_asset_file)[0] + f'_randomized_0.xml'    # env.dt = 1/REFERENCE_HZ
+    target_asset_path = os.path.join(source_asset_root, target_asset_file)
+    motion_tensor = AMPLoader('cuda:0', env.dt, reference_dict=REFERENCE_DICT, target_model_file=target_asset_path).trajectories[0].to(torch.float32)
     # # load policy
     # train_cfg.runner.resume = True
     # train_cfg.runner.LOG_WANDB = False

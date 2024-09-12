@@ -60,6 +60,8 @@ def play(args):
     train_cfg.runner.amp_num_preload_transitions = 100
     encoder_dim = train_cfg.policy.encoder_dim
     env_cfg.env.play = True
+    env_cfg.asset.num_morphologies = 1
+    env_cfg.domain_rand.link_length_randomize_range = 0.
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)

@@ -171,3 +171,21 @@ class AMPCritic(AMPDiscriminator):
             self.train()
         return reward.squeeze(dim=-1), amp_reward.squeeze(dim=-1), d 
     
+    def compute_grad_pen(self,
+                         expert_state,
+                         expert_next_state,
+                         lambda_=10):
+        expert_data = torch.cat([expert_state, expert_next_state], dim=-1)
+        expert_data.requires_grad = True
+
+        disc = self.amp_linear(self.trunk(expert_data))
+        ones = torch.ones(disc.size(), device=disc.device)
+        grad = autograd.grad( # Computes the gradients of outputs w.r.t. inputs.
+            outputs=disc, inputs=expert_data,
+            grad_outputs=ones, create_graph=True,
+            retain_graph=True, only_inputs=True)[0] # the index [0] indicates gradient w.r.t. the first input. For multiple inputs, use inputs=[input1, input2]
+
+        # Enforce that the grad norm approaches 0.
+        # grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        grad_pen = lambda_ * torch.square(torch.clamp(grad.norm(2, dim=1) - 1., min=0.)).mean()
+        return grad_pen
