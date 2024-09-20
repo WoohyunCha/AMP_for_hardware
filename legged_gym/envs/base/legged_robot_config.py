@@ -134,7 +134,7 @@ class LeggedRobotCfg(BaseConfig):
         class scales:
             termination = -0.0
             tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
+            tracking_ang_vel = 0.75 #0.5
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -0.
@@ -237,7 +237,7 @@ class LeggedRobotCfgPPO(BaseConfig):
         max_iterations = 1500 # number of policy updates
 
         # logging
-        save_interval = 50 # check for potential saves every this many iterations
+        save_interval = 200 # check for potential saves every this many iterations
         experiment_name = 'test'
         run_name = ''
         # load and resume

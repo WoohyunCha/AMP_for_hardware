@@ -362,7 +362,7 @@ class RolloutStorage_history:
         else:
             critic_observations = observations
 
-        actions = self.actions.flatten(0, 1)
+        actions = self.actions.flatten(0, 1) # 0 is step, 1 is env
         values = self.values.flatten(0, 1)
         returns = self.returns.flatten(0, 1)
         old_actions_log_prob = self.actions_log_prob.flatten(0, 1)

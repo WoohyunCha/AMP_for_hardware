@@ -50,11 +50,12 @@ from legged_gym.utils.helpers import class_to_dict
 from rsl_rl.datasets.motion_loader import AMPLoader
 from rsl_rl.utils.utils import Normalizer_obs
 from legged_gym.envs.base import observation_buffer
+import xml.etree.ElementTree as ET
 
 class TOCABIAMP(LeggedRobot):
 
     def _custom_init(self, cfg):
-        self.termination_height = cfg.asset.termination_height
+        self.termination_height = torch.tensor(cfg.asset.termination_height, dtype=torch.float32, device=self.device) * self.base_init_state[2]
         self.reference_state_initialization_prob = cfg.env.reference_state_initialization_prob
         self.normalizer_obs = None
         self.control_ticks = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
@@ -131,23 +132,22 @@ class TOCABIAMP(LeggedRobot):
         if self.cfg.env.include_history_steps is not None:
             self.obs_buf_history.reset(reset_env_ids, self.obs_buf[reset_env_ids])
             self.obs_buf_history.insert(self.obs_buf)
-            policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps))
+            policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps), delay=self.delays)
         else:
             policy_obs = self.obs_buf
-
         # encoder
         if self.encoder:
             self.long_obs_buffer.reset(reset_env_ids, self.obs_buf[reset_env_ids])
             self.long_obs_buffer.insert(self.obs_buf)
-            long_history_obs = self.long_obs_buffer.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
+            long_history_obs = self.long_obs_buffer.get_obs_vec(np.arange(self.encoder_history_steps), delay=self.delays).view(self.num_envs, self.num_obs, self.encoder_history_steps)
         privileged_obs = self.privileged_obs_buf
 
         if self.privileged_obs_buf is not None: # privileged
             if self.cfg.env.include_history_steps is not None:
                 self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
                 self.privileged_buf_history.reset(reset_env_ids, self.privileged_obs_buf[reset_env_ids])
-                self.privileged_buf_history.insert(self.privileged_obs_buf)
-                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps))
+                self.privileged_buf_history.insert(self.privileged_obs_buf)             
+                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps), delay=self.delays)
         if self.encoder:
             return policy_obs, privileged_obs, self.rew_buf, self.reset_buf, self.extras, reset_env_ids, terminal_amp_states, long_history_obs
         else:
@@ -174,20 +174,20 @@ class TOCABIAMP(LeggedRobot):
 
     def get_observations(self):
         if self.cfg.env.include_history_steps is not None:
-            policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps))
+            policy_obs = self.obs_buf_history.get_obs_vec(np.arange(self.include_history_steps), delay=self.delays)
         else:
             policy_obs = self.obs_buf           
 
         return policy_obs
     
     def get_long_history(self):
-        return self.long_obs_buffer.get_obs_vec(np.arange(self.encoder_history_steps)).view(self.num_envs, self.num_obs, self.encoder_history_steps)
+        return self.long_obs_buffer.get_obs_vec(np.arange(self.encoder_history_steps), delay=self.delays).view(self.num_envs, self.num_obs, self.encoder_history_steps)
 
     def get_privileged_observations(self): # privileged
         privileged_obs = self.privileged_obs_buf
         if privileged_obs is not None:
             if self.cfg.env.include_history_steps is not None:
-                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps))       
+                privileged_obs = self.privileged_buf_history.get_obs_vec(np.arange(self.include_history_steps), delay=self.delays)       
         return privileged_obs
 
     def post_physics_step(self):
@@ -226,8 +226,7 @@ class TOCABIAMP(LeggedRobot):
             self._draw_debug_vis()
 
         # check to push robots
-        if self.episode_length_buf[env_ids].float().mean() > self.max_episode_length * 0.9:
-            self.start_perturb = True
+
 
         return env_ids, terminal_amp_states
 
@@ -235,6 +234,7 @@ class TOCABIAMP(LeggedRobot):
         """ Check if environments need to be reset
         """
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         self.reset_buf |= self.time_out_buf
         self.height_buf = self.root_states[:, 2] < self.termination_height[0]
@@ -287,7 +287,9 @@ class TOCABIAMP(LeggedRobot):
                 self.bias_vec[env_ids] = (2*torch.rand_like(self.bias_vec[env_ids], dtype=torch.float32, device=self.device) - 1) * self.bias_scale_vec.unsqueeze(0)
             if self.cfg.bias.bias_dist == 'gaussian':
                 self.bias_vec[env_ids] = torch.randn_like(self.bias_vec[env_ids], dtype=torch.float32, device=self.device) * self.bias_scale_vec.unsqueeze(0)
-
+        if self.cfg.domain_rand.randomize_delay:
+            self.delays[env_ids] = torch.randint_like(self.delays[env_ids], high=1+int(self.cfg.domain_rand.delay_range_s/self.dt))
+            
 
         # reset control tick
         self.control_ticks[env_ids] = 0
@@ -420,17 +422,6 @@ class TOCABIAMP(LeggedRobot):
         if self.normalizer_obs is not None:
             with torch.no_grad():
                 self.privileged_obs_buf = self.normalizer_obs(self.privileged_obs_buf)
-        # if self.add_noise:
-        #     # Additive noise
-        #     # For Most Robot Sensors: Additive noise is more often modeled, especially for IMUs, cameras, and GPS.
-        #     # Do not add noise to actions
-        #     # TODO MODIFY THIS PART IF OBSERVATION SPACE IS CHANGED
-        #     std = self.noise_std/(self.normalizer_obs.running_var + self.normalizer_obs.epsilon).sqrt()
-        #     assert std.shape[-1] == self.privileged_obs_buf.shape[-1]
-        #     std[36:48] = 0.
-        #     std[9:12] = 0.
-        #     self.privileged_obs_buf += torch.randn_like(self.privileged_obs_buf) * std
-        # print("After normalize : ", self.obs_buf[0])
 
         if self.num_obs == self.num_privileged_obs - 6:
             self.obs_buf = self.privileged_obs_buf[:, 6:] 
@@ -445,9 +436,9 @@ class TOCABIAMP(LeggedRobot):
         base_ang_vel = self.base_ang_vel
         foot_pos = self.foot_positions_in_base_frame()
         # foot_rot = self.foot_rotations_in_base_frame()
-        # ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
+        ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         # ret = torch.concat((base_height, self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
-        ret = torch.concat((self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
+        # ret = torch.concat((self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         return ret
 
     def create_sim(self):
@@ -467,6 +458,12 @@ class TOCABIAMP(LeggedRobot):
         elif mesh_type is not None:
             raise ValueError("Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
         self._create_envs()
+
+    def destroy_sim(self):
+        """Destroy simulation, terrain and environments
+        """
+        self.gym.destroy_sim(self.sim)
+        print("Simulation destroyed")    
 
     def set_camera(self, position, lookat):
         """ Set camera position and direction
@@ -533,7 +530,7 @@ class TOCABIAMP(LeggedRobot):
                 0.18, 0.18, 0.18, 0.18, 0.0032, 0.0032, 0.0032, 0.0032, \
                 0.0032, 0.0032, \
                 0.18, 0.18, 0.18, 0.18, 0.0032, 0.0032, 0.0032, 0.0032]
-            props['damping'].fill(0.1)
+            props['damping'].fill(0.1) # 0.1
         return props
 
 
@@ -610,6 +607,10 @@ class TOCABIAMP(LeggedRobot):
             lerp_tick = self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)
             lerp_time = torch.clamp(lerp_tick * self.dt, min=0., max=self.cfg.commands.soft_command_time).unsqueeze(1)
             self.commands = self.commands_initial * (1-lerp_time/self.cfg.commands.soft_command_time) + self.commands_target * lerp_time/self.cfg.commands.soft_command_time
+
+        # if self.cfg.domain_rand.randomize_delay:
+        #     if self.common_step_counter % (self.cfg.domain_rand.randomize_delay_interval_s / self.dt) == 0:
+        #         self.delay = torch.randint(0, 1+int(self.cfg.domain_rand.delay_range_s/self.dt))
 
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
@@ -734,9 +735,9 @@ class TOCABIAMP(LeggedRobot):
 
         self.dof_vel[env_ids] = 0.
 
-        self.dof_pos[env_ids, :self.num_actions] = AMPLoader.get_joint_pose_batch(frames)
+        self.dof_pos[env_ids, :self.num_actions] = AMPLoader.get_joint_pose_batch(frames).to(torch.float32)
 
-        self.dof_vel[env_ids, :self.num_actions] = AMPLoader.get_joint_vel_batch(frames)       
+        self.dof_vel[env_ids, :self.num_actions] = AMPLoader.get_joint_vel_batch(frames).to(torch.float32)     
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
@@ -773,15 +774,12 @@ class TOCABIAMP(LeggedRobot):
         """
         # base position
         self._reset_root_states(env_ids=env_ids) 
-        # root_pos = AMPLoader.get_root_pos_batch(frames)
-        # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
-        # self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
-        root_orn = AMPLoader.get_root_rot_batch(frames)
+        self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze().to(torch.float32)
+        root_orn = AMPLoader.get_root_rot_batch(frames).to(torch.float32)
         self.root_states[env_ids, 3:7] = root_orn
-        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
-        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
-        self.root_states[env_ids, 7:13] = torch_rand_float(-0., 0., (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
-        # self.root_states[env_ids, 7] = torch_rand_float(-0.2, 0.2, (len(env_ids),1), device=self.device).squeeze(-1) # [7:10]: lin vel, [10:13]: ang vel
+        self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames).to(torch.float32))
+        self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames).to(torch.float32))
+        # self.root_states[env_ids, 7:13] = torch_rand_float(-0., 0., (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
@@ -922,6 +920,8 @@ class TOCABIAMP(LeggedRobot):
         # WH
         self.robot_mass = torch.zeros((self.num_envs, 1), dtype=torch.float, device=self.device, requires_grad=False)
         self.torque_constant = torch.rand((self.num_envs, 1), dtype=torch.float, device=self.device)
+        self.delays = torch.zeros((self.num_envs), dtype=torch.int, device=self.device)
+        # self.delays = 0.
 
         # joint positions offsets and PD gains
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
@@ -1077,6 +1077,17 @@ class TOCABIAMP(LeggedRobot):
         self.gym.add_triangle_mesh(self.sim, self.terrain.vertices.flatten(order='C'), self.terrain.triangles.flatten(order='C'), tm_params)   
         self.height_samples = torch.tensor(self.terrain.heightsamples).view(self.terrain.tot_rows, self.terrain.tot_cols).to(self.device)
 
+    def _from_xml(self, xml_path):
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for body in root.findall('.//body[@name="base_link"]'):
+    # Get the current position attribute
+            pos_str = body.get('pos').split()
+            pos_value = []
+            for i in pos_str:
+                pos_value.append(float(i))
+        return pos_value
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -1128,6 +1139,7 @@ class TOCABIAMP(LeggedRobot):
             termination_contact_names.extend([s for s in body_names if name in s])
 
         base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
+        base_init_state_list[2] = self._from_xml(asset_path)[2] * 1.
         self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
         start_pose = gymapi.Transform()
         start_pose.p = gymapi.Vec3(*self.base_init_state[:3])
@@ -1286,3 +1298,24 @@ class TOCABIAMP(LeggedRobot):
             print("Set normalizer to eval mode")
             self.normalizer_obs.eval()
     #------------ reward functions----------------
+
+    def _reward_feet_contact_forces(self):
+        # penalize high contact forces
+        ones = torch.ones((self.num_envs,), device=self.device)
+        zeros = torch.zeros((self.num_envs,), device=self.device)
+        lfoot_force, rfoot_force = self.contact_forces[:, self.feet_indices[0], :], self.contact_forces[:, self.feet_indices[1], :]
+        left_foot_thres = lfoot_force[:,2].unsqueeze(-1) > 1.4*9.81*self.robot_mass
+        right_foot_thres = rfoot_force[:,2].unsqueeze(-1) > 1.4*9.81*self.robot_mass
+        thres = left_foot_thres | right_foot_thres
+        force_thres_penalty = torch.where(thres.squeeze(-1), -2*ones[:], zeros[:])
+        contact_force_penalty_thres = (1-torch.exp(-(torch.norm(torch.clamp(lfoot_force[:, 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1) \
+                                                            + torch.norm(torch.clamp(rfoot_force[:,2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1)) / self.cfg.rewards.contact_force_sigma))
+
+        contact_force_penalty = torch.where(thres.squeeze(-1), contact_force_penalty_thres[:], ones)
+
+        return (force_thres_penalty + contact_force_penalty) 
+        # return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+    
+    def _reward_minimize_energy(self):
+        # return -torch.sum(torch.clamp(self.torques[:, :self.num_actions]*self.dof_vel[:, :self.num_actions], min=0.), dim=-1)
+        return -torch.sum(self.torques[:, :self.num_actions]*self.dof_vel[:, :self.num_actions], dim=-1)

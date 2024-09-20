@@ -60,6 +60,8 @@ def play(args):
     train_cfg.runner.amp_num_preload_transitions = 100
     encoder_dim = train_cfg.policy.encoder_dim
     env_cfg.env.play = True
+    env_cfg.asset.num_morphologies = 1
+    env_cfg.domain_rand.link_length_randomize_range = 0.
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
@@ -96,7 +98,7 @@ def play(args):
     camera_vel = np.array([1., 1., 0.])
     camera_direction = np.array(env_cfg.viewer.lookat) - np.array(env_cfg.viewer.pos)
     img_idx = 0
-    for i in range(10*int(env.max_episode_length)):
+    for i in range(5*int(env.max_episode_length)):
         # print(obs)
         # if normalizer is not None:
         #     obs = normalizer(obs)
@@ -144,6 +146,8 @@ def play(args):
                     logger.log_rewards(infos["episode"], num_episodes)
         elif i==stop_rew_log:
             logger.print_rewards()
+
+    env.destroy_sim()
 
 if __name__ == '__main__':
     EXPORT_POLICY = True

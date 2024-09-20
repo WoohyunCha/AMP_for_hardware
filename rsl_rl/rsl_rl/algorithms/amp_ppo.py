@@ -38,6 +38,8 @@ from rsl_rl.storage.replay_buffer import ReplayBuffer
 from rsl_rl.algorithms.amp_discriminator import AMPCritic
 from rsl_rl.modules.encoder import CNNEncoder
 
+import random
+
 class AMPPPO:
     actor_critic: ActorCritic
     def __init__(self,
@@ -280,16 +282,19 @@ class AMPPPO:
                 expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
                 if isinstance(self.discriminator, AMPCritic):
                     # WGAN
-                    boundary = 0.5 # 0.1 ~ 0.5 is the proper range of selection
+                    boundary = 0.3 # 0.1 ~ 0.5 is the proper range of selection
                     expert_loss = -torch.nn.Tanh()(
                         boundary*expert_d
                     ).mean()
                     policy_loss = torch.nn.Tanh()(
                         boundary*policy_d
                     ).mean()
-                    amp_loss = (expert_loss + policy_loss) 
-                    grad_pen_loss = self.discriminator.compute_grad_pen(
-                        *sample_amp_expert, lambda_=self.disc_grad_pen)
+                    amp_loss = (expert_loss + policy_loss)
+                    # grad_pen_loss = self.discriminator.compute_grad_pen(
+                        # *sample_amp_expert, lambda_=self.disc_grad_pen)
+                    grad_pen_loss = self.discriminator.compute_grad_pen_interpolate(
+                        *sample_amp_expert, *sample_amp_policy, lambda_=self.disc_grad_pen
+                    )
                 else: 
                     # LSGAN
                     expert_loss = torch.nn.MSELoss()(
@@ -1011,3 +1016,725 @@ class AMPPPOSym(AMPPPO):
         self.storage.clear()
 
         return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred, mean_mirror_loss
+    
+class AMPPPOSymMorph(AMPPPOSym):
+    def __init__(self, actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs=1, num_mini_batches=1, clip_param=0.2, gamma=0.998, lam=0.95, value_loss_coef=1, entropy_coef=0, learning_rate=0.001, max_grad_norm=1, use_clipped_value_loss=True, schedule="fixed", desired_kl=0.01, device='cpu', amp_replay_buffer_size=100000, min_std=None, disc_coef=5, bounds_loss_coef=10, encoder_dim=None, encoder_history_steps=50, include_history_steps=1, mirror={}, mirror_weight=4, num_actuation=None, mirror_neg={}, cartesian_angular_mirror=[], cartesian_linear_mirror=[], cartesian_command_mirror=[], switch_mirror=[], phase_mirror=[], no_mirror=[]):
+        super().__init__(actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs, num_mini_batches, clip_param, gamma, lam, value_loss_coef, entropy_coef, learning_rate, max_grad_norm, use_clipped_value_loss, schedule, desired_kl, device, amp_replay_buffer_size, min_std, disc_coef, bounds_loss_coef, encoder_dim, encoder_history_steps, include_history_steps, mirror, mirror_weight, num_actuation, mirror_neg, cartesian_angular_mirror, cartesian_linear_mirror, cartesian_command_mirror, switch_mirror, phase_mirror, no_mirror)
+
+    def update_latent(self):
+        mean_value_loss = 0
+        mean_surrogate_loss = 0
+        mean_amp_loss = 0
+        mean_grad_pen_loss = 0
+        mean_policy_pred = 0
+        mean_expert_pred = 0
+        mean_mirror_loss = 0
+        if self.actor_critic.is_recurrent:
+            raise NotImplementedError
+            generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+
+        amp_policy_generator = self.amp_storage.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches)
+        # list version
+        # amp_data_generate = random.choice(self.amp_data)
+        # print(f"random choosing : {self.amp_data.index(amp_data_generate)}")
+        # amp_expert_generator = amp_data_generate.feed_forward_generator(
+        #     self.num_learning_epochs * self.num_mini_batches,
+        #     self.storage.num_envs * self.storage.num_transitions_per_env //
+        #         self.num_mini_batches)
+        # print(amp_data_generate)
+
+        # AMP_Loader_morph version
+        amp_expert_generator = self.amp_data.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches) 
+        for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
+
+                obs_batch, history_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+                    old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
+                aug_obs_batch = obs_batch.detach()
+                long_history_batch = history_batch.detach()
+                self.actor_critic.act(aug_obs_batch, long_history_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+                aug_critic_obs_batch = critic_obs_batch.detach()
+                value_batch = self.actor_critic.evaluate(aug_critic_obs_batch, long_history_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
+                mu_batch = self.actor_critic.action_mean
+                sigma_batch = self.actor_critic.action_std
+                entropy_batch = self.actor_critic.entropy
+
+                # KL
+                if self.desired_kl != None and self.schedule == 'adaptive':
+                    with torch.inference_mode():
+                        kl = torch.sum(
+                            torch.log(sigma_batch / old_sigma_batch + 1.e-5) + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch)) / (2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
+                        kl_mean = torch.mean(kl)
+                        
+                        if kl_mean > self.desired_kl * 2.0:
+                            self.learning_rate = max(1e-6, self.learning_rate / 1.5)
+
+                        elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+
+                        for param_group in self.optimizer.param_groups:
+                            # if param_group['name'] == 'encoder':
+                            #     lr = param_group['lr']
+                            #     if kl_mean > self.desired_kl * 2.0:
+                            #         param_group['lr'] = max(1e-6, lr / 1.5)
+
+                            #     elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            #         param_group['lr'] = min(1e-2, lr * 1.5)                               
+                            # else:
+                            param_group['lr'] = self.learning_rate
+                            
+
+
+
+                # Surrogate loss
+                ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
+                # ratio = torch.exp(-actions_log_prob_batch + torch.squeeze(old_actions_log_prob_batch))
+                surrogate = -torch.squeeze(advantages_batch) * ratio
+                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio, 1.0 - self.clip_param,
+                                                                                1.0 + self.clip_param)
+                surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+
+                # Value function loss
+                if self.use_clipped_value_loss:
+                    value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_param,
+                                                                                                    self.clip_param)
+                    value_losses = (value_batch - returns_batch).pow(2)
+                    value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                    value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                else:
+                    value_loss = (returns_batch - value_batch).pow(2).mean()
+                
+                # bound loss
+                soft_bound = 1.0
+                mu_loss_high = torch.maximum(mu_batch - soft_bound,
+                                             torch.tensor(0, device=self.device)) ** 2 
+                mu_loss_low = torch.minimum(mu_batch + soft_bound, torch.tensor(0, device=self.device)) ** 2
+                b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+                
+                # Discriminator loss.
+                policy_state, policy_next_state = sample_amp_policy
+                expert_state, expert_next_state = sample_amp_expert
+                if self.amp_normalizer is not None:
+                    with torch.no_grad():
+                        policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
+                        policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
+                        expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                        expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
+                policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
+                expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
+                if isinstance(self.discriminator, AMPCritic):
+                    # WGAN
+                    boundary = 0.5 # 0.1 ~ 0.5 is the proper range of selection
+                    expert_loss = -torch.nn.Tanh()(
+                        boundary*expert_d
+                    ).mean()
+                    policy_loss = torch.nn.Tanh()(
+                        boundary*policy_d
+                    ).mean()
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen(
+                        *sample_amp_expert, lambda_=self.disc_grad_pen)
+                else: 
+                    # LSGAN
+                    expert_loss = torch.nn.MSELoss()(
+                        expert_d, torch.ones(expert_d.size(), device=self.device))
+                    policy_loss = torch.nn.MSELoss()(
+                        policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen( 
+                        *sample_amp_expert, lambda_=self.disc_grad_pen) 
+                # logit reg
+                logit_weights = torch.flatten(self.discriminator.amp_linear.weight)
+                disc_logit_loss = 0.05*torch.sum(torch.square(logit_weights))
+                # # weight decay
+                # weights = []
+                # for m in self.discriminator.trunk.modules():
+                #     if isinstance(m, nn.Linear):
+                #         weights.append(torch.flatten(m.weight))
+                # weights.append(logit_weights)
+                # disc_weights = torch.cat(weights, dim=-1)
+                # disc_weight_decay = 0.0001*torch.sum(torch.square(disc_weights))
+
+                # Compute total loss.
+                mirror_loss = 0.
+                if self.mirror_weight > 0.:
+                    mirror_loss = self.get_mirror_loss(obs_batch, actions_batch, long_history_batch)
+                loss = (
+                    surrogate_loss +
+                    self.value_loss_coef * value_loss +
+                    self.bounds_loss_coef * b_loss.mean() -
+                    self.entropy_coef * entropy_batch.mean() +
+                    self.disc_coef*(amp_loss + grad_pen_loss + disc_logit_loss)
+                    + self.mirror_weight*mirror_loss
+                    )
+                
+                # Gradient step
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+                if not self.actor_critic.fixed_std and self.min_std is not None:
+                    self.actor_critic.std.data = self.actor_critic.std.data.clamp(min=self.min_std)
+
+                if self.amp_normalizer is not None:
+                    self.amp_normalizer.update(policy_state.cpu().numpy())
+                    self.amp_normalizer.update(expert_state.cpu().numpy())
+
+                mean_value_loss += value_loss.item()
+                mean_surrogate_loss += surrogate_loss.item()
+                mean_amp_loss += amp_loss.item()
+                mean_grad_pen_loss += grad_pen_loss.item()
+                mean_policy_pred += policy_d.mean().item()
+                mean_expert_pred += expert_d.mean().item()
+                mean_mirror_loss += mirror_loss
+
+        num_updates = self.num_learning_epochs * self.num_mini_batches
+        mean_value_loss /= num_updates
+        mean_surrogate_loss /= num_updates
+        mean_amp_loss /= num_updates
+        mean_grad_pen_loss /= num_updates
+        mean_policy_pred /= num_updates
+        mean_expert_pred /= num_updates
+        mean_mirror_loss /= num_updates
+        self.storage.clear()
+
+        return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred, mean_mirror_loss
+
+    def update(self):
+        mean_value_loss = 0
+        mean_surrogate_loss = 0
+        mean_amp_loss = 0
+        mean_grad_pen_loss = 0
+        mean_policy_pred = 0
+        mean_expert_pred = 0
+        mean_mirror_loss = 0
+        if self.actor_critic.is_recurrent:
+            generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+
+        amp_policy_generator = self.amp_storage.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches)
+        # list version
+        # amp_data_generate = random.choice(self.amp_data)
+        # amp_expert_generator = amp_data_generate.feed_forward_generator(
+        #     self.num_learning_epochs * self.num_mini_batches,
+        #     self.storage.num_envs * self.storage.num_transitions_per_env //
+        #         self.num_mini_batches)
+        
+        # AMP_Loader_morph version
+        amp_expert_generator = self.amp_data.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches) 
+        for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
+
+                obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+                    old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
+                aug_obs_batch = obs_batch.detach()
+                self.actor_critic.act(aug_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+                aug_critic_obs_batch = critic_obs_batch.detach()
+                value_batch = self.actor_critic.evaluate(aug_critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
+                mu_batch = self.actor_critic.action_mean
+                sigma_batch = self.actor_critic.action_std
+                entropy_batch = self.actor_critic.entropy
+
+                # KL
+                if self.desired_kl != None and self.schedule == 'adaptive':
+                    with torch.inference_mode():
+                        kl = torch.sum(
+                            torch.log(sigma_batch / old_sigma_batch + 1.e-5) + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch)) / (2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
+                        kl_mean = torch.mean(kl)
+
+                        if kl_mean > self.desired_kl * 2.0:
+                            self.learning_rate = max(1e-6, self.learning_rate / 1.5)
+                        elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+
+                        for param_group in self.optimizer.param_groups:
+                            param_group['lr'] = self.learning_rate
+
+
+                # Surrogate loss
+                ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
+                # ratio = torch.exp(-actions_log_prob_batch + torch.squeeze(old_actions_log_prob_batch))
+                surrogate = -torch.squeeze(advantages_batch) * ratio
+                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio, 1.0 - self.clip_param,
+                                                                                1.0 + self.clip_param)
+                surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+
+                # Value function loss
+                if self.use_clipped_value_loss:
+                    value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_param,
+                                                                                                    self.clip_param)
+                    value_losses = (value_batch - returns_batch).pow(2)
+                    value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                    value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                else:
+                    value_loss = (returns_batch - value_batch).pow(2).mean()
+                
+                # bound loss
+                soft_bound = 1.0
+                mu_loss_high = torch.maximum(mu_batch - soft_bound,
+                                             torch.tensor(0, device=self.device)) ** 2 
+                mu_loss_low = torch.minimum(mu_batch + soft_bound, torch.tensor(0, device=self.device)) ** 2
+                b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+                
+                # Discriminator loss.
+                policy_state, policy_next_state = sample_amp_policy
+                expert_state, expert_next_state = sample_amp_expert
+                if self.amp_normalizer is not None:
+                    with torch.no_grad():
+                        policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
+                        policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
+                        expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                        expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
+                print(f"expert : ", expert_state)
+                print(f"next expert : ", expert_next_state)
+                policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
+                expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
+                if isinstance(self.discriminator, AMPCritic):
+                    # WGAN
+                    boundary = 0.5 # 0.1 ~ 0.5 is the proper range of selection
+                    expert_loss = -torch.nn.Tanh()(
+                        boundary*expert_d
+                    ).mean()
+                    policy_loss = torch.nn.Tanh()(
+                        boundary*policy_d
+                    ).mean()
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen(
+                        *sample_amp_expert, lambda_=self.disc_grad_pen)
+                else: 
+                    # LSGAN
+                    expert_loss = torch.nn.MSELoss()(
+                        expert_d, torch.ones(expert_d.size(), device=self.device))
+                    policy_loss = torch.nn.MSELoss()(
+                        policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen( 
+                        *sample_amp_expert, lambda_=self.disc_grad_pen) 
+                # logit reg
+                logit_weights = torch.flatten(self.discriminator.amp_linear.weight)
+                disc_logit_loss = 0.05*torch.sum(torch.square(logit_weights))
+                # # weight decay
+                # weights = []
+                # for m in self.discriminator.trunk.modules():
+                #     if isinstance(m, nn.Linear):
+                #         weights.append(torch.flatten(m.weight))
+                # weights.append(logit_weights)
+                # disc_weights = torch.cat(weights, dim=-1)
+                # disc_weight_decay = 0.0001*torch.sum(torch.square(disc_weights))
+
+                # Compute total loss.
+                mirror_loss = self.get_mirror_loss(aug_obs_batch, actions_batch, None)
+                loss = (
+                    surrogate_loss +
+                    self.value_loss_coef * value_loss +
+                    self.bounds_loss_coef * b_loss.mean() -
+                    self.entropy_coef * entropy_batch.mean() +
+                    self.disc_coef*(amp_loss + grad_pen_loss + disc_logit_loss)
+                    + self.mirror_weight * mirror_loss
+                    )
+                
+                # Gradient step
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+
+
+                if not self.actor_critic.fixed_std and self.min_std is not None:
+                    self.actor_critic.std.data = self.actor_critic.std.data.clamp(min=self.min_std)
+
+                if self.amp_normalizer is not None:
+                    self.amp_normalizer.update(policy_state.cpu().numpy())
+                    self.amp_normalizer.update(expert_state.cpu().numpy())
+
+                mean_value_loss += value_loss.item()
+                mean_surrogate_loss += surrogate_loss.item()
+                mean_amp_loss += amp_loss.item()
+                mean_grad_pen_loss += grad_pen_loss.item()
+                mean_policy_pred += policy_d.mean().item()
+                mean_expert_pred += expert_d.mean().item()
+                mean_mirror_loss += mirror_loss.item()
+
+        num_updates = self.num_learning_epochs * self.num_mini_batches
+        mean_value_loss /= num_updates
+        mean_surrogate_loss /= num_updates
+        mean_amp_loss /= num_updates
+        mean_grad_pen_loss /= num_updates
+        mean_policy_pred /= num_updates
+        mean_expert_pred /= num_updates
+        mean_mirror_loss /= num_updates
+        self.storage.clear()
+
+        return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred, mean_mirror_loss
+    
+class AMPPPOMorph(AMPPPO):
+    def __init__(self, actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs=1, num_mini_batches=1, clip_param=0.2, gamma=0.998, lam=0.95, value_loss_coef=1, entropy_coef=0, learning_rate=0.001, max_grad_norm=1, use_clipped_value_loss=True, schedule="fixed", desired_kl=0.01, device='cpu', amp_replay_buffer_size=100000, min_std=None, disc_coef=5, bounds_loss_coef=10, encoder_dim=None, encoder_history_steps=50):
+        super().__init__(actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs, num_mini_batches, clip_param, gamma, lam, value_loss_coef, entropy_coef, learning_rate, max_grad_norm, use_clipped_value_loss, schedule, desired_kl, device, amp_replay_buffer_size, min_std, disc_coef, bounds_loss_coef, encoder_dim, encoder_history_steps)
+
+    def update_latent(self):
+        mean_value_loss = 0
+        mean_surrogate_loss = 0
+        mean_amp_loss = 0
+        mean_grad_pen_loss = 0
+        mean_policy_pred = 0
+        mean_expert_pred = 0
+        if self.actor_critic.is_recurrent:
+            raise NotImplementedError
+            generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+
+        amp_policy_generator = self.amp_storage.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches)
+        # list version
+        # amp_data_generate = random.choice(self.amp_data)
+        # print(f"random choosing : {self.amp_data.index(amp_data_generate)}")
+        # amp_expert_generator = amp_data_generate.feed_forward_generator(
+        #     self.num_learning_epochs * self.num_mini_batches,
+        #     self.storage.num_envs * self.storage.num_transitions_per_env //
+        #         self.num_mini_batches)
+        # print(amp_data_generate)
+
+        # AMP_Loader_morph version
+        amp_expert_generator = self.amp_data.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches) 
+        for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
+
+                obs_batch, history_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+                    old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
+                aug_obs_batch = obs_batch.detach()
+                long_history_batch = history_batch.detach()
+                self.actor_critic.act(aug_obs_batch, long_history_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+                aug_critic_obs_batch = critic_obs_batch.detach()
+                value_batch = self.actor_critic.evaluate(aug_critic_obs_batch, long_history_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
+                mu_batch = self.actor_critic.action_mean
+                sigma_batch = self.actor_critic.action_std
+                entropy_batch = self.actor_critic.entropy
+
+                # KL
+                if self.desired_kl != None and self.schedule == 'adaptive':
+                    with torch.inference_mode():
+                        kl = torch.sum(
+                            torch.log(sigma_batch / old_sigma_batch + 1.e-5) + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch)) / (2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
+                        kl_mean = torch.mean(kl)
+                        
+                        if kl_mean > self.desired_kl * 2.0:
+                            self.learning_rate = max(1e-6, self.learning_rate / 1.5)
+
+                        elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+
+                        for param_group in self.optimizer.param_groups:
+                            # if param_group['name'] == 'encoder':
+                            #     lr = param_group['lr']
+                            #     if kl_mean > self.desired_kl * 2.0:
+                            #         param_group['lr'] = max(1e-6, lr / 1.5)
+
+                            #     elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            #         param_group['lr'] = min(1e-2, lr * 1.5)                               
+                            # else:
+                            param_group['lr'] = self.learning_rate
+                            
+
+
+
+                # Surrogate loss
+                ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
+                # ratio = torch.exp(-actions_log_prob_batch + torch.squeeze(old_actions_log_prob_batch))
+                surrogate = -torch.squeeze(advantages_batch) * ratio
+                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio, 1.0 - self.clip_param,
+                                                                                1.0 + self.clip_param)
+                surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+
+                # Value function loss
+                if self.use_clipped_value_loss:
+                    value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_param,
+                                                                                                    self.clip_param)
+                    value_losses = (value_batch - returns_batch).pow(2)
+                    value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                    value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                else:
+                    value_loss = (returns_batch - value_batch).pow(2).mean()
+                
+                # bound loss
+                soft_bound = 1.0
+                mu_loss_high = torch.maximum(mu_batch - soft_bound,
+                                             torch.tensor(0, device=self.device)) ** 2 
+                mu_loss_low = torch.minimum(mu_batch + soft_bound, torch.tensor(0, device=self.device)) ** 2
+                b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+                
+                # Discriminator loss.
+                policy_state, policy_next_state = sample_amp_policy
+                expert_state, expert_next_state = sample_amp_expert
+                if self.amp_normalizer is not None:
+                    with torch.no_grad():
+                        policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
+                        policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
+                        expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                        expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
+                policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
+                expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
+                if isinstance(self.discriminator, AMPCritic):
+                    # WGAN
+                    boundary = 0.5 # 0.1 ~ 0.5 is the proper range of selection
+                    expert_loss = -torch.nn.Tanh()(
+                        boundary*expert_d
+                    ).mean()
+                    policy_loss = torch.nn.Tanh()(
+                        boundary*policy_d
+                    ).mean()
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen(
+                        *sample_amp_expert, lambda_=self.disc_grad_pen)
+                else: 
+                    # LSGAN
+                    expert_loss = torch.nn.MSELoss()(
+                        expert_d, torch.ones(expert_d.size(), device=self.device))
+                    policy_loss = torch.nn.MSELoss()(
+                        policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen( 
+                        *sample_amp_expert, lambda_=self.disc_grad_pen) 
+                # logit reg
+                logit_weights = torch.flatten(self.discriminator.amp_linear.weight)
+                disc_logit_loss = 0.05*torch.sum(torch.square(logit_weights))
+                # # weight decay
+                # weights = []
+                # for m in self.discriminator.trunk.modules():
+                #     if isinstance(m, nn.Linear):
+                #         weights.append(torch.flatten(m.weight))
+                # weights.append(logit_weights)
+                # disc_weights = torch.cat(weights, dim=-1)
+                # disc_weight_decay = 0.0001*torch.sum(torch.square(disc_weights))
+
+                # Compute total loss.
+                loss = (
+                    surrogate_loss +
+                    self.value_loss_coef * value_loss +
+                    self.bounds_loss_coef * b_loss.mean() -
+                    self.entropy_coef * entropy_batch.mean() +
+                    self.disc_coef*(amp_loss + grad_pen_loss + disc_logit_loss)
+                    )
+                
+                # Gradient step
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+                if not self.actor_critic.fixed_std and self.min_std is not None:
+                    self.actor_critic.std.data = self.actor_critic.std.data.clamp(min=self.min_std)
+
+                if self.amp_normalizer is not None:
+                    self.amp_normalizer.update(policy_state.cpu().numpy())
+                    self.amp_normalizer.update(expert_state.cpu().numpy())
+
+                mean_value_loss += value_loss.item()
+                mean_surrogate_loss += surrogate_loss.item()
+                mean_amp_loss += amp_loss.item()
+                mean_grad_pen_loss += grad_pen_loss.item()
+                mean_policy_pred += policy_d.mean().item()
+                mean_expert_pred += expert_d.mean().item()
+
+        num_updates = self.num_learning_epochs * self.num_mini_batches
+        mean_value_loss /= num_updates
+        mean_surrogate_loss /= num_updates
+        mean_amp_loss /= num_updates
+        mean_grad_pen_loss /= num_updates
+        mean_policy_pred /= num_updates
+        mean_expert_pred /= num_updates
+        self.storage.clear()
+
+        return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred
+
+    def update(self):
+        mean_value_loss = 0
+        mean_surrogate_loss = 0
+        mean_amp_loss = 0
+        mean_grad_pen_loss = 0
+        mean_policy_pred = 0
+        mean_expert_pred = 0
+        if self.actor_critic.is_recurrent:
+            generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+
+        amp_policy_generator = self.amp_storage.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches)
+        # list version
+        # amp_data_generate = random.choice(self.amp_data)
+        # amp_expert_generator = amp_data_generate.feed_forward_generator(
+        #     self.num_learning_epochs * self.num_mini_batches,
+        #     self.storage.num_envs * self.storage.num_transitions_per_env //
+        #         self.num_mini_batches)
+        
+        # AMP_Loader_morph version
+        amp_expert_generator = self.amp_data.feed_forward_generator(
+            self.num_learning_epochs * self.num_mini_batches,
+            self.storage.num_envs * self.storage.num_transitions_per_env //
+                self.num_mini_batches) 
+        for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
+
+                obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+                    old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
+                aug_obs_batch = obs_batch.detach()
+                self.actor_critic.act(aug_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+                aug_critic_obs_batch = critic_obs_batch.detach()
+                value_batch = self.actor_critic.evaluate(aug_critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
+                mu_batch = self.actor_critic.action_mean
+                sigma_batch = self.actor_critic.action_std
+                entropy_batch = self.actor_critic.entropy
+
+                # KL
+                if self.desired_kl != None and self.schedule == 'adaptive':
+                    with torch.inference_mode():
+                        kl = torch.sum(
+                            torch.log(sigma_batch / old_sigma_batch + 1.e-5) + (torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch)) / (2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
+                        kl_mean = torch.mean(kl)
+
+                        if kl_mean > self.desired_kl * 2.0:
+                            self.learning_rate = max(1e-6, self.learning_rate / 1.5)
+                        elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                            self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+
+                        for param_group in self.optimizer.param_groups:
+                            param_group['lr'] = self.learning_rate
+
+
+                # Surrogate loss
+                ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
+                # ratio = torch.exp(-actions_log_prob_batch + torch.squeeze(old_actions_log_prob_batch))
+                surrogate = -torch.squeeze(advantages_batch) * ratio
+                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio, 1.0 - self.clip_param,
+                                                                                1.0 + self.clip_param)
+                surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+
+                # Value function loss
+                if self.use_clipped_value_loss:
+                    value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_param,
+                                                                                                    self.clip_param)
+                    value_losses = (value_batch - returns_batch).pow(2)
+                    value_losses_clipped = (value_clipped - returns_batch).pow(2)
+                    value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                else:
+                    value_loss = (returns_batch - value_batch).pow(2).mean()
+                
+                # bound loss
+                soft_bound = 1.0
+                mu_loss_high = torch.maximum(mu_batch - soft_bound,
+                                             torch.tensor(0, device=self.device)) ** 2 
+                mu_loss_low = torch.minimum(mu_batch + soft_bound, torch.tensor(0, device=self.device)) ** 2
+                b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+                
+                # Discriminator loss.
+                policy_state, policy_next_state = sample_amp_policy
+                expert_state, expert_next_state = sample_amp_expert
+                if self.amp_normalizer is not None:
+                    with torch.no_grad():
+                        policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
+                        policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
+                        expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                        expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
+                print(f"expert : ", expert_state)
+                print(f"next expert : ", expert_next_state)
+                policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
+                expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
+                if isinstance(self.discriminator, AMPCritic):
+                    # WGAN
+                    boundary = 0.5 # 0.1 ~ 0.5 is the proper range of selection
+                    expert_loss = -torch.nn.Tanh()(
+                        boundary*expert_d
+                    ).mean()
+                    policy_loss = torch.nn.Tanh()(
+                        boundary*policy_d
+                    ).mean()
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen(
+                        *sample_amp_expert, lambda_=self.disc_grad_pen)
+                else: 
+                    # LSGAN
+                    expert_loss = torch.nn.MSELoss()(
+                        expert_d, torch.ones(expert_d.size(), device=self.device))
+                    policy_loss = torch.nn.MSELoss()(
+                        policy_d, -1 * torch.ones(policy_d.size(), device=self.device))
+                    amp_loss = (expert_loss + policy_loss) *0.5
+                    grad_pen_loss = self.discriminator.compute_grad_pen( 
+                        *sample_amp_expert, lambda_=self.disc_grad_pen) 
+                # logit reg
+                logit_weights = torch.flatten(self.discriminator.amp_linear.weight)
+                disc_logit_loss = 0.05*torch.sum(torch.square(logit_weights))
+                # # weight decay
+                # weights = []
+                # for m in self.discriminator.trunk.modules():
+                #     if isinstance(m, nn.Linear):
+                #         weights.append(torch.flatten(m.weight))
+                # weights.append(logit_weights)
+                # disc_weights = torch.cat(weights, dim=-1)
+                # disc_weight_decay = 0.0001*torch.sum(torch.square(disc_weights))
+
+                # Compute total loss.
+                loss = (
+                    surrogate_loss +
+                    self.value_loss_coef * value_loss +
+                    self.bounds_loss_coef * b_loss.mean() -
+                    self.entropy_coef * entropy_batch.mean() +
+                    self.disc_coef*(amp_loss + grad_pen_loss + disc_logit_loss)
+                    )
+                
+                # Gradient step
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+
+
+                if not self.actor_critic.fixed_std and self.min_std is not None:
+                    self.actor_critic.std.data = self.actor_critic.std.data.clamp(min=self.min_std)
+
+                if self.amp_normalizer is not None:
+                    self.amp_normalizer.update(policy_state.cpu().numpy())
+                    self.amp_normalizer.update(expert_state.cpu().numpy())
+
+                mean_value_loss += value_loss.item()
+                mean_surrogate_loss += surrogate_loss.item()
+                mean_amp_loss += amp_loss.item()
+                mean_grad_pen_loss += grad_pen_loss.item()
+                mean_policy_pred += policy_d.mean().item()
+                mean_expert_pred += expert_d.mean().item()
+
+        num_updates = self.num_learning_epochs * self.num_mini_batches
+        mean_value_loss /= num_updates
+        mean_surrogate_loss /= num_updates
+        mean_amp_loss /= num_updates
+        mean_grad_pen_loss /= num_updates
+        mean_policy_pred /= num_updates
+        mean_expert_pred /= num_updates
+        self.storage.clear()
+
+        return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred

@@ -164,10 +164,59 @@ class AMPCritic(AMPDiscriminator):
                 next_state = normalizer.normalize_torch(next_state, self.device)
 
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
-            reward = self.amp_reward_coef * torch.exp(d)
+            reward = self.amp_reward_coef * .5 * torch.exp(d)
             amp_reward = reward
             if self.task_reward_lerp > 0:
                 reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
             self.train()
         return reward.squeeze(dim=-1), amp_reward.squeeze(dim=-1), d 
     
+    def compute_grad_pen_interpolate(
+            self,
+            expert_state,
+            expert_next_state,
+            policy_state,
+            policy_next_state,
+            lambda_=10
+    ):
+        expert_data = torch.cat([expert_state, expert_next_state], dim=-1)
+        # expert_data.requires_grad = True
+        policy_data = torch.cat([policy_state, policy_next_state], dim=-1)
+        interpolate_data = slerp(expert_data, policy_data, torch.rand((expert_data.shape[0], 1), device=self.device))
+        interpolate_data.requires_grad = True
+
+        disc = self.amp_linear(self.trunk(interpolate_data))
+        ones = torch.ones(disc.size(), device=disc.device)
+        grad = autograd.grad( # Computes the gradients of outputs w.r.t. inputs.
+            outputs=disc, inputs=interpolate_data,
+            grad_outputs=ones, create_graph=True,
+            retain_graph=True, only_inputs=True)[0] # the index [0] indicates gradient w.r.t. the first input. For multiple inputs, use inputs=[input1, input2]
+
+        # Enforce that the grad norm approaches 0.
+        # grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        grad_pen = lambda_ * (torch.clamp(grad.norm(2, dim=1) - 1., min=0.)).pow(2).mean()
+        return grad_pen
+
+
+
+    # def compute_grad_pen(self,
+    #                      expert_state,
+    #                      expert_next_state,
+    #                      lambda_=10):
+        # expert_data = torch.cat([expert_state, expert_next_state], dim=-1)
+        # expert_data.requires_grad = True
+
+        # disc = self.amp_linear(self.trunk(expert_data))
+        # ones = torch.ones(disc.size(), device=disc.device)
+        # grad = autograd.grad( # Computes the gradients of outputs w.r.t. inputs.
+        #     outputs=disc, inputs=expert_data,
+        #     grad_outputs=ones, create_graph=True,
+        #     retain_graph=True, only_inputs=True)[0] # the index [0] indicates gradient w.r.t. the first input. For multiple inputs, use inputs=[input1, input2]
+
+        # # Enforce that the grad norm approaches 0.
+        # # grad_pen = lambda_ * (grad.norm(2, dim=1) - 0).pow(2).mean()
+        # grad_pen = lambda_ * torch.square(torch.clamp(grad.norm(2, dim=1) - 1., min=0.)).mean()
+        # return grad_pen
+
+def slerp(a, b, blend):
+    return (1-blend)*a + blend*b
