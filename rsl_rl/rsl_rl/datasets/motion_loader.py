@@ -30,10 +30,10 @@ class AMPLoader:
 
     POS_SIZE = 3
     JOINT_POS_SIZE = 12
-    LINEAR_VEL_SIZE = 0
-    ANGULAR_VEL_SIZE = 0
+    LINEAR_VEL_SIZE = 3
+    ANGULAR_VEL_SIZE = 3
     JOINT_VEL_SIZE = 12
-    ROOT_POS_SIZE = 0 # base height 
+    ROOT_POS_SIZE = 1 # base height 
     ROOT_ROT_SIZE = 4 # projected gravity
 
     OBSERVATION_DIM = ROOT_POS_SIZE + ROOT_ROT_SIZE + LINEAR_VEL_SIZE + ANGULAR_VEL_SIZE\
@@ -118,18 +118,6 @@ class AMPLoader:
             with open(motion_file, "r") as f:
                 motion_json = json.load(f)
                 motion_data = np.array(motion_json["Frames"]) # motion data in json form.
-                # motion_data = self.reorder_from_pybullet_to_isaac(motion_data) # For A1 only
-
-                # # Normalize and standardize quaternions.
-                # for f_i in range(motion_data.shape[0]):
-                #     root_rot = AMPLoader.get_root_rot(motion_data[f_i])
-                #     root_rot = pose3d.QuaternionNormalize(root_rot)
-                #     root_rot = motion_util.standardize_quaternion(root_rot)
-                #     motion_data[
-                #         f_i,
-                #         AMPLoader.POS_SIZE:
-                #             (AMPLoader.POS_SIZE +
-                #              AMPLoader.ROT_SIZE)] = root_rot
                 if (model_file == target_model_file or model_file == ''): 
                     print("No retargetting motion")
                     processed_data_full, info = self.process_data(motion_data, i)
@@ -255,14 +243,14 @@ class AMPLoader:
         p = times / self.trajectory_lens[traj_idxs]
         n = self.trajectory_num_frames[traj_idxs]
         idx_low, idx_high = np.floor(p * n).astype(np.int), np.ceil(p * n).astype(np.int)
-        # all_frame_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, device=self.device)
-        # all_frame_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, device=self.device)
+        all_frame_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, dtype=torch.float16, device=self.device)
         all_frame_rot_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, dtype=torch.float16, device=self.device)
         all_frame_rot_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, dtype=torch.float16, device=self.device)
-        # all_frame_linvel_starts = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, device=self.device)
-        # all_frame_linvel_ends = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, device=self.device)
-        # all_frame_angvel_starts = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, device=self.device)
-        # all_frame_angvel_ends = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, device=self.device)
+        all_frame_linvel_starts = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_linvel_ends = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_angvel_starts = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_angvel_ends = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, dtype=torch.float16, device=self.device)
         all_frame_amp_starts = torch.zeros(len(traj_idxs), AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, dtype=torch.float16, device=self.device)
         all_frame_amp_ends = torch.zeros(len(traj_idxs),  AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, dtype=torch.float16, device=self.device)
         all_frame_foot_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, dtype=torch.float16, device=self.device)
@@ -270,14 +258,14 @@ class AMPLoader:
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories_full[traj_idx]
             traj_mask = traj_idxs == traj_idx
-            # all_frame_pos_starts[traj_mask] = AMPLoader.get_root_pos_batch(trajectory[idx_low[traj_mask]])
-            # all_frame_pos_ends[traj_mask] = AMPLoader.get_root_pos_batch(trajectory[idx_high[traj_mask]])
+            all_frame_pos_starts[traj_mask] = AMPLoader.get_root_pos_batch(trajectory[idx_low[traj_mask]])
+            all_frame_pos_ends[traj_mask] = AMPLoader.get_root_pos_batch(trajectory[idx_high[traj_mask]])
             all_frame_rot_starts[traj_mask] = AMPLoader.get_root_rot_batch(trajectory[idx_low[traj_mask]])
             all_frame_rot_ends[traj_mask] = AMPLoader.get_root_rot_batch(trajectory[idx_high[traj_mask]])
-            # all_frame_linvel_starts[traj_mask] = AMPLoader.get_linear_vel_batch(trajectory[idx_high[traj_mask]])
-            # all_frame_linvel_ends[traj_mask] = AMPLoader.get_linear_vel_batch(trajectory[idx_low[traj_mask]])
-            # all_frame_angvel_starts[traj_mask] = AMPLoader.get_angular_vel_batch(trajectory[idx_high[traj_mask]])
-            # all_frame_angvel_ends[traj_mask] = AMPLoader.get_angular_vel_batch(trajectory[idx_low[traj_mask]])
+            all_frame_linvel_starts[traj_mask] = AMPLoader.get_linear_vel_batch(trajectory[idx_high[traj_mask]])
+            all_frame_linvel_ends[traj_mask] = AMPLoader.get_linear_vel_batch(trajectory[idx_low[traj_mask]])
+            all_frame_angvel_starts[traj_mask] = AMPLoader.get_angular_vel_batch(trajectory[idx_high[traj_mask]])
+            all_frame_angvel_ends[traj_mask] = AMPLoader.get_angular_vel_batch(trajectory[idx_low[traj_mask]])
             all_frame_amp_starts[traj_mask] = trajectory[idx_low[traj_mask]][:, AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
             all_frame_amp_ends[traj_mask] = trajectory[idx_high[traj_mask]][:, AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_VEL_END_IDX]
             all_frame_foot_pos_starts[traj_mask] = AMPLoader.get_foot_pos_batch(trajectory[idx_low[traj_mask]])
@@ -285,16 +273,16 @@ class AMPLoader:
 
         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float16, requires_grad=False).unsqueeze(-1)
 
-        # pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend) 
+        pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend) 
         rot_blend = self.slerp(all_frame_rot_starts, all_frame_rot_ends, blend)
-        # lin_blend = self.slerp(all_frame_linvel_starts, all_frame_linvel_ends, blend)
-        # ang_blend = self.slerp(all_frame_angvel_starts, all_frame_angvel_ends, blend)
+        lin_blend = self.slerp(all_frame_linvel_starts, all_frame_linvel_ends, blend)
+        ang_blend = self.slerp(all_frame_angvel_starts, all_frame_angvel_ends, blend)
         amp_blend = self.slerp(all_frame_amp_starts, all_frame_amp_ends, blend)
         foot_pos_blend = self.slerp(all_frame_foot_pos_starts, all_frame_foot_pos_ends, blend)
 
-        # ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend], dim=-1) 
+        ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend], dim=-1) 
         # ret = torch.cat([pos_blend, rot_blend, amp_blend, foot_pos_blend], dim=-1) 
-        ret = torch.cat([rot_blend, amp_blend, foot_pos_blend], dim=-1) 
+        # ret = torch.cat([rot_blend, amp_blend, foot_pos_blend], dim=-1) 
         return ret
 
     def get_frame(self):
@@ -331,34 +319,34 @@ class AMPLoader:
             An interpolation of the two frames.
         """
 
-        # root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
+        root_pos0, root_pos1 = AMPLoader.get_root_pos(frame0), AMPLoader.get_root_pos(frame1)
         root_rot0, root_rot1 = AMPLoader.get_root_rot(frame0), AMPLoader.get_root_rot(frame1)
-        # linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
-        # angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
+        linear_vel_0, linear_vel_1 = AMPLoader.get_linear_vel(frame0), AMPLoader.get_linear_vel(frame1)
+        angular_vel_0, angular_vel_1 = AMPLoader.get_angular_vel(frame0), AMPLoader.get_angular_vel(frame1)
         joints0, joints1 = AMPLoader.get_joint_pose(frame0), AMPLoader.get_joint_pose(frame1)
         joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
         foot_pos0, foot_pos1 = AMPLoader.get_foot_pos(frame0), AMPLoader.get_foot_pos(frame1)
         
-        # blend_root_pos = self.slerp(root_pos0, root_pos1, blend) 
+        blend_root_pos = self.slerp(root_pos0, root_pos1, blend) 
         blend_root_rot = self.slerp(root_rot0, root_rot1, blend)
-        # blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
-        # blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
+        blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
+        blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
         blend_joints = self.slerp(joints0, joints1, blend)
         blend_joints_vel = self.slerp(joint_vel_0, joint_vel_1, blend)
         blend_foot_pos = self.slerp(foot_pos0, foot_pos1, blend)
 
-        # ret = torch.cat([
-        #     blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
-        #     blend_foot_pos
-        #     ], dim=-1)
+        ret = torch.cat([
+            blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
+            blend_foot_pos
+            ], dim=-1)
         # ret = torch.cat([ 
         #     blend_root_pos, blend_root_rot, blend_joints, blend_joints_vel,
         #     blend_foot_pos
         #     ], dim=-1)
-        ret = torch.cat([
-            blend_root_rot, blend_joints, blend_joints_vel,
-            blend_foot_pos
-            ], dim=-1)
+        # ret = torch.cat([
+        #     blend_root_rot, blend_joints, blend_joints_vel,
+        #     blend_foot_pos
+        #     ], dim=-1)
 
         return ret
 
@@ -394,11 +382,11 @@ class AMPLoader:
     def num_motions(self):
         return len(self.trajectory_names)
 
-    # def get_root_pos(pose):
-    #     return pose[AMPLoader.ROOT_POS_START_IDX:AMPLoader.ROOT_POS_END_IDX]
+    def get_root_pos(pose):
+        return pose[AMPLoader.ROOT_POS_START_IDX:AMPLoader.ROOT_POS_END_IDX]
 
-    # def get_root_pos_batch(poses):
-    #     return poses[:, AMPLoader.ROOT_POS_START_IDX:AMPLoader.ROOT_POS_END_IDX]
+    def get_root_pos_batch(poses):
+        return poses[:, AMPLoader.ROOT_POS_START_IDX:AMPLoader.ROOT_POS_END_IDX]
 
     def get_root_rot(pose):
         return pose[AMPLoader.ROOT_ROT_START_IDX:AMPLoader.ROOT_ROT_END_IDX]
@@ -406,17 +394,17 @@ class AMPLoader:
     def get_root_rot_batch(poses):
         return poses[:, AMPLoader.ROOT_ROT_START_IDX:AMPLoader.ROOT_ROT_END_IDX]
 
-    # def get_linear_vel(pose):
-    #     return pose[AMPLoader.LINEAR_VEL_START_IDX:AMPLoader.LINEAR_VEL_END_IDX]
+    def get_linear_vel(pose):
+        return pose[AMPLoader.LINEAR_VEL_START_IDX:AMPLoader.LINEAR_VEL_END_IDX]
     
-    # def get_linear_vel_batch(poses):
-    #     return poses[:, AMPLoader.LINEAR_VEL_START_IDX:AMPLoader.LINEAR_VEL_END_IDX]
+    def get_linear_vel_batch(poses):
+        return poses[:, AMPLoader.LINEAR_VEL_START_IDX:AMPLoader.LINEAR_VEL_END_IDX]
 
-    # def get_angular_vel(pose):
-    #     return pose[AMPLoader.ANGULAR_VEL_START_IDX:AMPLoader.ANGULAR_VEL_END_IDX]  
+    def get_angular_vel(pose):
+        return pose[AMPLoader.ANGULAR_VEL_START_IDX:AMPLoader.ANGULAR_VEL_END_IDX]  
 
-    # def get_angular_vel_batch(poses):
-    #     return poses[:, AMPLoader.ANGULAR_VEL_START_IDX:AMPLoader.ANGULAR_VEL_END_IDX]
+    def get_angular_vel_batch(poses):
+        return poses[:, AMPLoader.ANGULAR_VEL_START_IDX:AMPLoader.ANGULAR_VEL_END_IDX]
     
     def get_joint_pose(pose):
         return pose[AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_POSE_END_IDX]
@@ -499,9 +487,9 @@ class AMPLoader:
         assert (~torch.isfinite(L_foot_quat_base_torch)).sum() == 0, "Found non finite element 7"
         R_foot_quat_base_torch = quat_mul(quat_conjugate(pelvis_quat), R_foot_quat_global_torch)
         assert (~torch.isfinite(R_foot_quat_base_torch)).sum() == 0, "Found non finite element 8"
-        # ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
+        ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
         # ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
-        ret = torch.concat((pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
+        # ret = torch.concat((pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
         info = torch.concat((base_height.unsqueeze(-1), base_lin_vel, base_ang_vel, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1)
         with open(os.path.join(PROCESSED_DATA_DIR, 'processed_data_'+str(index)+'.txt'), "w") as file:
             for line in ret.cpu().numpy().tolist():
@@ -518,10 +506,10 @@ class AMPLoaderMorph:
 
     POS_SIZE = 3
     JOINT_POS_SIZE = 12
-    LINEAR_VEL_SIZE = 0
-    ANGULAR_VEL_SIZE = 0
+    LINEAR_VEL_SIZE = 3
+    ANGULAR_VEL_SIZE = 3
     JOINT_VEL_SIZE = 12
-    ROOT_POS_SIZE = 0 # base height 
+    ROOT_POS_SIZE = 1 # base height 
     ROOT_ROT_SIZE = 4 # projected gravity
 
     OBSERVATION_DIM = ROOT_POS_SIZE + ROOT_ROT_SIZE + LINEAR_VEL_SIZE + ANGULAR_VEL_SIZE\
@@ -762,14 +750,14 @@ class AMPLoaderMorph:
         p = times / self.trajectory_lens[traj_idxs]
         n = self.trajectory_num_frames[traj_idxs]
         idx_low, idx_high = np.floor(p * n).astype(np.int), np.ceil(p * n).astype(np.int)
-        # all_frame_pos_starts = torch.zeros(len(traj_idxs), AMPLoaderMorph.ROOT_POS_SIZE, device=self.device)
-        # all_frame_pos_ends = torch.zeros(len(traj_idxs), AMPLoaderMorph.ROOT_POS_SIZE, device=self.device)
+        all_frame_pos_starts = torch.zeros(len(traj_idxs), self.num_morphology,AMPLoaderMorph.ROOT_POS_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_pos_ends = torch.zeros(len(traj_idxs), self.num_morphology,AMPLoaderMorph.ROOT_POS_SIZE, dtype=torch.float16, device=self.device)
         all_frame_rot_starts = torch.zeros(len(traj_idxs), self.num_morphology, AMPLoaderMorph.ROOT_ROT_SIZE, dtype=torch.float16, device=self.device)
         all_frame_rot_ends = torch.zeros(len(traj_idxs), self.num_morphology, AMPLoaderMorph.ROOT_ROT_SIZE, dtype=torch.float16, device=self.device)
-        # all_frame_linvel_starts = torch.zeros(len(traj_idxs), AMPLoaderMorph.LINEAR_VEL_SIZE, device=self.device)
-        # all_frame_linvel_ends = torch.zeros(len(traj_idxs), AMPLoaderMorph.LINEAR_VEL_SIZE, device=self.device)
-        # all_frame_angvel_starts = torch.zeros(len(traj_idxs), AMPLoaderMorph.ANGULAR_VEL_SIZE, device=self.device)
-        # all_frame_angvel_ends = torch.zeros(len(traj_idxs), AMPLoaderMorph.ANGULAR_VEL_SIZE, device=self.device)
+        all_frame_linvel_starts = torch.zeros(len(traj_idxs), self.num_morphology,AMPLoaderMorph.LINEAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_linvel_ends = torch.zeros(len(traj_idxs), self.num_morphology,AMPLoaderMorph.LINEAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_angvel_starts = torch.zeros(len(traj_idxs), self.num_morphology,AMPLoaderMorph.ANGULAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_angvel_ends = torch.zeros(len(traj_idxs), self.num_morphology,AMPLoaderMorph.ANGULAR_VEL_SIZE, dtype=torch.float16, device=self.device)
         all_frame_amp_starts = torch.zeros(len(traj_idxs), self.num_morphology, AMPLoaderMorph.JOINT_VEL_END_IDX - AMPLoaderMorph.JOINT_POSE_START_IDX, dtype=torch.float16, device=self.device)
         all_frame_amp_ends = torch.zeros(len(traj_idxs), self.num_morphology,  AMPLoaderMorph.JOINT_VEL_END_IDX - AMPLoaderMorph.JOINT_POSE_START_IDX, dtype=torch.float16, device=self.device)
         all_frame_foot_pos_starts = torch.zeros(len(traj_idxs), self.num_morphology, AMPLoaderMorph.FOOT_POS_END_IDX - AMPLoaderMorph.FOOT_POS_START_IDX, dtype=torch.float16, device=self.device)
@@ -777,14 +765,14 @@ class AMPLoaderMorph:
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories_full[traj_idx]
             traj_mask = traj_idxs == traj_idx
-            # all_frame_pos_starts[traj_mask] = AMPLoaderMorph.get_root_pos_batch(trajectory[idx_low[traj_mask]])
-            # all_frame_pos_ends[traj_mask] = AMPLoaderMorph.get_root_pos_batch(trajectory[idx_high[traj_mask]])
+            all_frame_pos_starts[traj_mask, :] = AMPLoaderMorph.get_root_pos_batch(trajectory[idx_low[traj_mask]])
+            all_frame_pos_ends[traj_mask, :] = AMPLoaderMorph.get_root_pos_batch(trajectory[idx_high[traj_mask]])
             all_frame_rot_starts[traj_mask, :] = AMPLoaderMorph.get_root_rot_batch(trajectory[idx_low[traj_mask]])
             all_frame_rot_ends[traj_mask, :] = AMPLoaderMorph.get_root_rot_batch(trajectory[idx_high[traj_mask]])
-            # all_frame_linvel_starts[traj_mask] = AMPLoaderMorph.get_linear_vel_batch(trajectory[idx_high[traj_mask]])
-            # all_frame_linvel_ends[traj_mask] = AMPLoaderMorph.get_linear_vel_batch(trajectory[idx_low[traj_mask]])
-            # all_frame_angvel_starts[traj_mask] = AMPLoaderMorph.get_angular_vel_batch(trajectory[idx_high[traj_mask]])
-            # all_frame_angvel_ends[traj_mask] = AMPLoaderMorph.get_angular_vel_batch(trajectory[idx_low[traj_mask]])
+            all_frame_linvel_starts[traj_mask, :] = AMPLoaderMorph.get_linear_vel_batch(trajectory[idx_high[traj_mask]])
+            all_frame_linvel_ends[traj_mask, :] = AMPLoaderMorph.get_linear_vel_batch(trajectory[idx_low[traj_mask]])
+            all_frame_angvel_starts[traj_mask, :] = AMPLoaderMorph.get_angular_vel_batch(trajectory[idx_high[traj_mask]])
+            all_frame_angvel_ends[traj_mask, :] = AMPLoaderMorph.get_angular_vel_batch(trajectory[idx_low[traj_mask]])
             all_frame_amp_starts[traj_mask, :] = trajectory[idx_low[traj_mask]][:, :, AMPLoaderMorph.JOINT_POSE_START_IDX:AMPLoaderMorph.JOINT_VEL_END_IDX]
             all_frame_amp_ends[traj_mask, :] = trajectory[idx_high[traj_mask]][:, :, AMPLoaderMorph.JOINT_POSE_START_IDX:AMPLoaderMorph.JOINT_VEL_END_IDX]
             all_frame_foot_pos_starts[traj_mask, :] = AMPLoaderMorph.get_foot_pos_batch(trajectory[idx_low[traj_mask]])
@@ -792,16 +780,16 @@ class AMPLoaderMorph:
 
         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float16, requires_grad=False).unsqueeze(-1).unsqueeze(-1)
 
-        # pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend) 
+        pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend) 
         rot_blend = self.slerp(all_frame_rot_starts, all_frame_rot_ends, blend)
-        # lin_blend = self.slerp(all_frame_linvel_starts, all_frame_linvel_ends, blend)
-        # ang_blend = self.slerp(all_frame_angvel_starts, all_frame_angvel_ends, blend)
+        lin_blend = self.slerp(all_frame_linvel_starts, all_frame_linvel_ends, blend)
+        ang_blend = self.slerp(all_frame_angvel_starts, all_frame_angvel_ends, blend)
         amp_blend = self.slerp(all_frame_amp_starts, all_frame_amp_ends, blend)
         foot_pos_blend = self.slerp(all_frame_foot_pos_starts, all_frame_foot_pos_ends, blend)
 
-        # ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend], dim=-1) 
+        ret = torch.cat([pos_blend, rot_blend, lin_blend, ang_blend, amp_blend, foot_pos_blend], dim=-1) 
         # ret = torch.cat([pos_blend, rot_blend, amp_blend, foot_pos_blend], dim=-1) 
-        ret = torch.cat([rot_blend, amp_blend, foot_pos_blend], dim=-1) 
+        # ret = torch.cat([rot_blend, amp_blend, foot_pos_blend], dim=-1) 
         return ret
 
     def get_frame(self):
@@ -838,34 +826,34 @@ class AMPLoaderMorph:
             An interpolation of the two frames.
         """
 
-        # root_pos0, root_pos1 = AMPLoaderMorph.get_root_pos(frame0), AMPLoaderMorph.get_root_pos(frame1)
+        root_pos0, root_pos1 = AMPLoaderMorph.get_root_pos(frame0), AMPLoaderMorph.get_root_pos(frame1)
         root_rot0, root_rot1 = AMPLoaderMorph.get_root_rot(frame0), AMPLoaderMorph.get_root_rot(frame1)
-        # linear_vel_0, linear_vel_1 = AMPLoaderMorph.get_linear_vel(frame0), AMPLoaderMorph.get_linear_vel(frame1)
-        # angular_vel_0, angular_vel_1 = AMPLoaderMorph.get_angular_vel(frame0), AMPLoaderMorph.get_angular_vel(frame1)
+        linear_vel_0, linear_vel_1 = AMPLoaderMorph.get_linear_vel(frame0), AMPLoaderMorph.get_linear_vel(frame1)
+        angular_vel_0, angular_vel_1 = AMPLoaderMorph.get_angular_vel(frame0), AMPLoaderMorph.get_angular_vel(frame1)
         joints0, joints1 = AMPLoaderMorph.get_joint_pose(frame0), AMPLoaderMorph.get_joint_pose(frame1)
         joint_vel_0, joint_vel_1 = AMPLoaderMorph.get_joint_vel(frame0), AMPLoaderMorph.get_joint_vel(frame1)
         foot_pos0, foot_pos1 = AMPLoaderMorph.get_foot_pos(frame0), AMPLoaderMorph.get_foot_pos(frame1)
         
-        # blend_root_pos = self.slerp(root_pos0, root_pos1, blend) 
+        blend_root_pos = self.slerp(root_pos0, root_pos1, blend) 
         blend_root_rot = self.slerp(root_rot0, root_rot1, blend)
-        # blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
-        # blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
+        blend_linear_vel = self.slerp(linear_vel_0, linear_vel_1, blend)
+        blend_angular_vel = self.slerp(angular_vel_0, angular_vel_1, blend)
         blend_joints = self.slerp(joints0, joints1, blend)
         blend_joints_vel = self.slerp(joint_vel_0, joint_vel_1, blend)
         blend_foot_pos = self.slerp(foot_pos0, foot_pos1, blend)
 
-        # ret = torch.cat([
-        #     blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
-        #     blend_foot_pos
-        #     ], dim=-1)
+        ret = torch.cat([
+            blend_root_pos, blend_root_rot, blend_linear_vel, blend_angular_vel, blend_joints, blend_joints_vel,
+            blend_foot_pos
+            ], dim=-1)
         # ret = torch.cat([ 
         #     blend_root_pos, blend_root_rot, blend_joints, blend_joints_vel,
         #     blend_foot_pos
         #     ], dim=-1)
-        ret = torch.cat([
-            blend_root_rot, blend_joints, blend_joints_vel,
-            blend_foot_pos
-            ], dim=-1)
+        # ret = torch.cat([
+        #     blend_root_rot, blend_joints, blend_joints_vel,
+        #     blend_foot_pos
+        #     ], dim=-1)
 
         return ret
 
@@ -907,11 +895,11 @@ class AMPLoaderMorph:
     def num_motions(self):
         return len(self.trajectory_names)
 
-    # def get_root_pos(pose):
-    #     return pose[AMPLoaderMorph.ROOT_POS_START_IDX:AMPLoaderMorph.ROOT_POS_END_IDX]
+    def get_root_pos(pose):
+        return pose[:,AMPLoaderMorph.ROOT_POS_START_IDX:AMPLoaderMorph.ROOT_POS_END_IDX]
 
-    # def get_root_pos_batch(poses):
-    #     return poses[:, AMPLoaderMorph.ROOT_POS_START_IDX:AMPLoaderMorph.ROOT_POS_END_IDX]
+    def get_root_pos_batch(poses):
+        return poses[:,:, AMPLoaderMorph.ROOT_POS_START_IDX:AMPLoaderMorph.ROOT_POS_END_IDX]
 
     def get_root_rot(pose):
         return pose[:, AMPLoaderMorph.ROOT_ROT_START_IDX:AMPLoaderMorph.ROOT_ROT_END_IDX]
@@ -919,17 +907,17 @@ class AMPLoaderMorph:
     def get_root_rot_batch(poses):
         return poses[:, :, AMPLoaderMorph.ROOT_ROT_START_IDX:AMPLoaderMorph.ROOT_ROT_END_IDX]
 
-    # def get_linear_vel(pose):
-    #     return pose[AMPLoaderMorph.LINEAR_VEL_START_IDX:AMPLoaderMorph.LINEAR_VEL_END_IDX]
+    def get_linear_vel(pose):
+        return pose[:,AMPLoaderMorph.LINEAR_VEL_START_IDX:AMPLoaderMorph.LINEAR_VEL_END_IDX]
     
-    # def get_linear_vel_batch(poses):
-    #     return poses[:, AMPLoaderMorph.LINEAR_VEL_START_IDX:AMPLoaderMorph.LINEAR_VEL_END_IDX]
+    def get_linear_vel_batch(poses):
+        return poses[:,:, AMPLoaderMorph.LINEAR_VEL_START_IDX:AMPLoaderMorph.LINEAR_VEL_END_IDX]
 
-    # def get_angular_vel(pose):
-    #     return pose[AMPLoaderMorph.ANGULAR_VEL_START_IDX:AMPLoaderMorph.ANGULAR_VEL_END_IDX]  
+    def get_angular_vel(pose):
+        return pose[:,AMPLoaderMorph.ANGULAR_VEL_START_IDX:AMPLoaderMorph.ANGULAR_VEL_END_IDX]  
 
-    # def get_angular_vel_batch(poses):
-    #     return poses[:, AMPLoaderMorph.ANGULAR_VEL_START_IDX:AMPLoaderMorph.ANGULAR_VEL_END_IDX]
+    def get_angular_vel_batch(poses):
+        return poses[:,:, AMPLoaderMorph.ANGULAR_VEL_START_IDX:AMPLoaderMorph.ANGULAR_VEL_END_IDX]
     
     def get_joint_pose(pose):
         return pose[:, AMPLoaderMorph.JOINT_POSE_START_IDX:AMPLoaderMorph.JOINT_POSE_END_IDX]
@@ -1012,9 +1000,9 @@ class AMPLoaderMorph:
         assert (~torch.isfinite(L_foot_quat_base_torch)).sum() == 0, "Found non finite element 7"
         R_foot_quat_base_torch = quat_mul(quat_conjugate(pelvis_quat), R_foot_quat_global_torch)
         assert (~torch.isfinite(R_foot_quat_base_torch)).sum() == 0, "Found non finite element 8"
-        # ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
+        ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel, base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
         # ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
-        ret = torch.concat((pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
+        # ret = torch.concat((pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
         info = torch.concat((base_height.unsqueeze(-1), base_lin_vel, base_ang_vel, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1)
         with open(os.path.join(PROCESSED_DATA_DIR, 'processed_data_'+str(index)+'.txt'), "w") as file:
             for line in ret.cpu().numpy().tolist():

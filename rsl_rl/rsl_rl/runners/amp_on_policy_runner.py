@@ -37,7 +37,7 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from rsl_rl.algorithms import AMPPPO, PPO, AMPPPOSym, AMPPPOSymMorph
+from rsl_rl.algorithms import AMPPPO, PPO, AMPPPOSym, AMPPPOSymMorph, AMPPPOMorph
 from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, ActorCriticEncoder
 from rsl_rl.env import VecEnv
 from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator, AMPCritic
@@ -619,9 +619,9 @@ class AMPOnPolicyRunnerRand:
             torch.tensor(self.cfg["min_normalized_std"], device=self.device) *
             (torch.abs(self.env.dof_pos_limits[:, 1] - self.env.dof_pos_limits[:, 0]))[:self.env.num_actions])
         if self.encoder_dim is not None: # encoder
-            self.alg: AMPPPOSymMorph = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, encoder_dim=self.encoder_dim, encoder_history_steps=self.encoder_history_steps, **self.alg_cfg) # encoder
+            self.alg: AMPPPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, encoder_dim=self.encoder_dim, encoder_history_steps=self.encoder_history_steps, **self.alg_cfg) # encoder
         else:
-            self.alg: AMPPPOSymMorph = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, **self.alg_cfg) # encoder            
+            self.alg: AMPPPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, **self.alg_cfg) # encoder            
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
 

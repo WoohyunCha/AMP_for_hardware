@@ -436,9 +436,9 @@ class TOCABIAMP(LeggedRobot):
         base_ang_vel = self.base_ang_vel
         foot_pos = self.foot_positions_in_base_frame()
         # foot_rot = self.foot_rotations_in_base_frame()
-        # ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
+        ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         # ret = torch.concat((base_height, self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
-        ret = torch.concat((self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
+        # ret = torch.concat((self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         return ret
 
     def create_sim(self):
@@ -530,7 +530,7 @@ class TOCABIAMP(LeggedRobot):
                 0.18, 0.18, 0.18, 0.18, 0.0032, 0.0032, 0.0032, 0.0032, \
                 0.0032, 0.0032, \
                 0.18, 0.18, 0.18, 0.18, 0.0032, 0.0032, 0.0032, 0.0032]
-            props['damping'].fill(0.1)
+            props['damping'].fill(0.1) # 0.1
         return props
 
 
@@ -774,15 +774,12 @@ class TOCABIAMP(LeggedRobot):
         """
         # base position
         self._reset_root_states(env_ids=env_ids) 
-        # root_pos = AMPLoader.get_root_pos_batch(frames)
-        # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
-        # self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
+        self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze().to(torch.float32)
         root_orn = AMPLoader.get_root_rot_batch(frames).to(torch.float32)
         self.root_states[env_ids, 3:7] = root_orn
-        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
-        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
-        self.root_states[env_ids, 7:13] = torch_rand_float(-0., 0., (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
-        # self.root_states[env_ids, 7] = torch_rand_float(-0.2, 0.2, (len(env_ids),1), device=self.device).squeeze(-1) # [7:10]: lin vel, [10:13]: ang vel
+        self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames).to(torch.float32))
+        self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames).to(torch.float32))
+        # self.root_states[env_ids, 7:13] = torch_rand_float(-0., 0., (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
@@ -1301,8 +1298,24 @@ class TOCABIAMP(LeggedRobot):
             print("Set normalizer to eval mode")
             self.normalizer_obs.eval()
     #------------ reward functions----------------
+
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
-        return (1-torch.exp(-(torch.norm(torch.clamp(self.contact_forces[:, self.feet_indices[0], 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1) \
-                                                            + torch.norm(torch.clamp(self.contact_forces[:, self.feet_indices[1], 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1)) / self.cfg.rewards.contact_force_sigma))
+        ones = torch.ones((self.num_envs,), device=self.device)
+        zeros = torch.zeros((self.num_envs,), device=self.device)
+        lfoot_force, rfoot_force = self.contact_forces[:, self.feet_indices[0], :], self.contact_forces[:, self.feet_indices[1], :]
+        left_foot_thres = lfoot_force[:,2].unsqueeze(-1) > 1.4*9.81*self.robot_mass
+        right_foot_thres = rfoot_force[:,2].unsqueeze(-1) > 1.4*9.81*self.robot_mass
+        thres = left_foot_thres | right_foot_thres
+        force_thres_penalty = torch.where(thres.squeeze(-1), -2*ones[:], zeros[:])
+        contact_force_penalty_thres = (1-torch.exp(-(torch.norm(torch.clamp(lfoot_force[:, 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1) \
+                                                            + torch.norm(torch.clamp(rfoot_force[:,2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1)) / self.cfg.rewards.contact_force_sigma))
+
+        contact_force_penalty = torch.where(thres.squeeze(-1), contact_force_penalty_thres[:], ones)
+
+        return (force_thres_penalty + contact_force_penalty) 
         # return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+    
+    def _reward_minimize_energy(self):
+        # return -torch.sum(torch.clamp(self.torques[:, :self.num_actions]*self.dof_vel[:, :self.num_actions], min=0.), dim=-1)
+        return -torch.sum(self.torques[:, :self.num_actions]*self.dof_vel[:, :self.num_actions], dim=-1)

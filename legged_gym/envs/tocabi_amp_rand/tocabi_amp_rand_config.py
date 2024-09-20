@@ -491,7 +491,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         num_mini_batches = 4
         disc_coef = 1
         bounds_loss_coef = 10
-        disc_grad_pen = 5.
+        disc_grad_pen = 2.
         learning_rate = 3.e-5
 
 
@@ -499,21 +499,21 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         run_name = ''
         experiment_name = 'tocabi_amp_rand' # should be the same as 'env' in env.py and env_config.py 
         # algorithm_class_name = 'AMPPPOSym'
-        algorithm_class_name = 'AMPPPOSymMorph'
+        algorithm_class_name = 'AMPPPOMorph'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
         max_iterations = 20000 # number of policy updates
         num_steps_per_env = 24 #24 # per iteration, 32 in isaacgymenvs
 
-        amp_reward_coef = 2.0
+        amp_reward_coef = 3.0
         amp_motion_files = REFERENCE_DICT
         amp_num_preload_transitions =  2000000
         amp_task_reward_lerp = 0.3
-        amp_discr_hidden_dims = [256, 256]
+        amp_discr_hidden_dims = [512, 512]
 
         min_normalized_std = [0.05, 0.05, 0.05] * 4
         LOG_WANDB = True
-        wgan = False
+        wgan = True
 
 if 'Sym' in TOCABIAMPRandCfgPPO.runner.algorithm_class_name:
     TOCABIAMPRandCfgPPO.algorithm.include_history_steps = TOCABIAMPRandCfg.env.include_history_steps

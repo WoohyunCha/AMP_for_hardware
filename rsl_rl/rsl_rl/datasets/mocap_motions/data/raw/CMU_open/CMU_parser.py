@@ -85,10 +85,10 @@ VIRTUAL_JOINT_DIM = 7
 FRAME_TIME = 0
 POS_SIZE = 3
 JOINT_POS_SIZE = 12
-LINEAR_VEL_SIZE = 0
-ANGULAR_VEL_SIZE = 0
+LINEAR_VEL_SIZE = 3
+ANGULAR_VEL_SIZE = 3
 JOINT_VEL_SIZE = 12
-ROOT_POS_SIZE = 0 # base height change
+ROOT_POS_SIZE = 1 # base height change
 ROOT_ROT_SIZE = 4 # projected gravity
 
 OBSERVATION_DIM = ROOT_POS_SIZE + ROOT_ROT_SIZE + LINEAR_VEL_SIZE + ANGULAR_VEL_SIZE\
@@ -517,7 +517,8 @@ def process_data(traj: np.ndarray):# Process raw data from Mujoco
     assert (~torch.isfinite(L_foot_quat_base_torch)).sum() == 0, "Found non finite element 7"
     R_foot_quat_base_torch = quat_mul(quat_conjugate(pelvis_quat), R_foot_quat_global_torch)
     assert (~torch.isfinite(R_foot_quat_base_torch)).sum() == 0, "Found non finite element 8"
-    ret = torch.concat((pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
+    # ret = torch.concat((pelvis_quat, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
+    ret = torch.concat((base_height.unsqueeze(-1), pelvis_quat, base_lin_vel , base_ang_vel, q_pos_torch, q_vel_torch, L_foot_pos_base_torch, R_foot_pos_base_torch), dim=-1) 
     info = torch.concat((base_height.unsqueeze(-1), base_lin_vel, base_ang_vel, L_foot_quat_base_torch, R_foot_quat_base_torch), dim=-1)
 
     return ret, info
@@ -727,6 +728,8 @@ class MotionRetarget():
         target = target_model_path
         source_bodies, source_joints, source_edges = self.process_model(source)
         target_bodies, target_joints, target_edges = self.process_model(target)
+        self.root_ratio = target_bodies['base_link']['info']['position'][-1] / source_bodies['base_link']['info']['position'][-1]
+        assert self.root_ratio < 10 and self.root_ratio > 0.1, f"Root ratio is abnormally small, {self.root_ratio}"
         self.source = {
             'bodies': source_bodies,
             'joints': source_joints,
@@ -743,10 +746,10 @@ class MotionRetarget():
         # self.print_model(self.source)
         # print("TARGET MODEL")
         # self.print_model(self.target)
+        
 
     def process_model(self, model_path: str):
-        self.source = model_path
-        tree = etree.parse(self.source)
+        tree = etree.parse(model_path)
         root = tree.getroot()
         joints = {}
         bodies = {}
@@ -1012,50 +1015,51 @@ class MotionRetarget():
         R_foot_pos_opt = retarget_local_joint_pos[FOOT_NAME[1]]
         assert q_vel_opt.shape[0] == L_foot_pos_opt.shape[0]
         # time = torch.tensor([i for i in range(q_vel_opt.shape[0])], dtype=torch.float32, device='cuda:0').view(-1,1)
-        retarget_reference = torch.cat((retarget_global_joint_quat['virtual_joint'], q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
+        # retarget_reference = torch.cat((retarget_global_joint_quat['virtual_joint'], q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
+        retarget_reference = torch.cat((self.root_ratio*reference[:, 0:1],retarget_global_joint_quat['virtual_joint'], self.root_ratio*source_local_base_lin_vel, source_local_base_ang_vel, q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
 
         target_reference = torch.zeros((q_opt.shape[0], 3*13), requires_grad=False, device='cuda:0')
         for joint_name, _ in self.JOINT_MAPPING.items():
             target_reference[:, 3*(self.JOINT_MAPPING[joint_name]-6):3*(self.JOINT_MAPPING[joint_name]-5)] = retarget_global_joint_pos[joint_name]#target_global_joint_pos[joint_name] # retarget_global_joint_pos[joint_name]
         target_reference[:, 0:3] = retarget_global_joint_pos['virtual_joint'][:, 0:3]#target_global_joint_pos['virtual_joint'][:, 0:3] # retarget_global_joint_pos['virtual_joint'][:, 0:3]
 
-        # Check for foot quats
-        L_ankle_roll_joint = FOOT_NAME[0]
-        R_ankle_roll_joint = FOOT_NAME[1]
-        L_AnkleRoll_angle = q_opt[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7]
-        R_AnkleRoll_angle = q_opt[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7]
-        L_roll_quat = quat_from_angle_axis(L_AnkleRoll_angle ,to_torch(target_joints[L_ankle_roll_joint]['axis']))
-        R_roll_quat = quat_from_angle_axis(R_AnkleRoll_angle ,to_torch(target_joints[R_ankle_roll_joint]['axis']))
+        # # Check for foot quats
+        # L_ankle_roll_joint = FOOT_NAME[0]
+        # R_ankle_roll_joint = FOOT_NAME[1]
+        # L_AnkleRoll_angle = q_opt[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7]
+        # R_AnkleRoll_angle = q_opt[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7]
+        # L_roll_quat = quat_from_angle_axis(L_AnkleRoll_angle ,to_torch(target_joints[L_ankle_roll_joint]['axis']))
+        # R_roll_quat = quat_from_angle_axis(R_AnkleRoll_angle ,to_torch(target_joints[R_ankle_roll_joint]['axis']))
 
-        L_foot_euler = get_euler_xyz(retarget_global_joint_quat[L_ankle_roll_joint])
-        R_foot_euler = get_euler_xyz(retarget_global_joint_quat[R_ankle_roll_joint])
-        L_foot_euler = (normalize_angle(L_foot_euler[0]), normalize_angle(L_foot_euler[1]), normalize_angle(L_foot_euler[2]))
-        R_foot_euler = (normalize_angle(R_foot_euler[0]), normalize_angle(R_foot_euler[1]), normalize_angle(R_foot_euler[2]))
-        print("retarget L foot euler x : ", L_foot_euler[0].abs().mean())
-        print("retarget L foot euler y : ", L_foot_euler[1].abs().mean())
-        print("retarget L foot euler z : ", L_foot_euler[2].abs().mean())
-        print("retarget R foot euler x : ", R_foot_euler[0].abs().mean())
-        print("retarget R foot euler y : ", R_foot_euler[1].abs().mean())
-        print("retarget R foot euler z : ", R_foot_euler[2].abs().mean())
+        # L_foot_euler = get_euler_xyz(retarget_global_joint_quat[L_ankle_roll_joint])
+        # R_foot_euler = get_euler_xyz(retarget_global_joint_quat[R_ankle_roll_joint])
+        # L_foot_euler = (normalize_angle(L_foot_euler[0]), normalize_angle(L_foot_euler[1]), normalize_angle(L_foot_euler[2]))
+        # R_foot_euler = (normalize_angle(R_foot_euler[0]), normalize_angle(R_foot_euler[1]), normalize_angle(R_foot_euler[2]))
+        # print("retarget L foot euler x : ", L_foot_euler[0].abs().mean())
+        # print("retarget L foot euler y : ", L_foot_euler[1].abs().mean())
+        # print("retarget L foot euler z : ", L_foot_euler[2].abs().mean())
+        # print("retarget R foot euler x : ", R_foot_euler[0].abs().mean())
+        # print("retarget R foot euler y : ", R_foot_euler[1].abs().mean())
+        # print("retarget R foot euler z : ", R_foot_euler[2].abs().mean())
 
 
-        L_ankle_roll_joint = FOOT_NAME[0]
-        R_ankle_roll_joint = FOOT_NAME[1]
-        L_AnkleRoll_angle = source_qpos[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7]
-        R_AnkleRoll_angle = source_qpos[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7]
-        L_roll_quat = quat_from_angle_axis(L_AnkleRoll_angle ,to_torch(source_joints[L_ankle_roll_joint]['axis']))
-        R_roll_quat = quat_from_angle_axis(R_AnkleRoll_angle ,to_torch(source_joints[R_ankle_roll_joint]['axis']))
+        # L_ankle_roll_joint = FOOT_NAME[0]
+        # R_ankle_roll_joint = FOOT_NAME[1]
+        # L_AnkleRoll_angle = source_qpos[:, self.JOINT_MAPPING[L_ankle_roll_joint]-7]
+        # R_AnkleRoll_angle = source_qpos[:, self.JOINT_MAPPING[R_ankle_roll_joint]-7]
+        # L_roll_quat = quat_from_angle_axis(L_AnkleRoll_angle ,to_torch(source_joints[L_ankle_roll_joint]['axis']))
+        # R_roll_quat = quat_from_angle_axis(R_AnkleRoll_angle ,to_torch(source_joints[R_ankle_roll_joint]['axis']))
 
-        L_foot_euler = get_euler_xyz(source_global_joint_quat[L_ankle_roll_joint])
-        R_foot_euler = get_euler_xyz(source_global_joint_quat[R_ankle_roll_joint])
-        L_foot_euler = (normalize_angle(L_foot_euler[0]), normalize_angle(L_foot_euler[1]), normalize_angle(L_foot_euler[2]))
-        R_foot_euler = (normalize_angle(R_foot_euler[0]), normalize_angle(R_foot_euler[1]), normalize_angle(R_foot_euler[2]))
-        print("source L foot euler x : ", L_foot_euler[0].abs().mean())
-        print("source L foot euler y : ", L_foot_euler[1].abs().mean())
-        print("source L foot euler z : ", L_foot_euler[2].abs().mean())
-        print("source R foot euler x : ", R_foot_euler[0].abs().mean())
-        print("source R foot euler y : ", R_foot_euler[1].abs().mean())
-        print("source R foot euler z : ", R_foot_euler[2].abs().mean())
+        # L_foot_euler = get_euler_xyz(source_global_joint_quat[L_ankle_roll_joint])
+        # R_foot_euler = get_euler_xyz(source_global_joint_quat[R_ankle_roll_joint])
+        # L_foot_euler = (normalize_angle(L_foot_euler[0]), normalize_angle(L_foot_euler[1]), normalize_angle(L_foot_euler[2]))
+        # R_foot_euler = (normalize_angle(R_foot_euler[0]), normalize_angle(R_foot_euler[1]), normalize_angle(R_foot_euler[2]))
+        # print("source L foot euler x : ", L_foot_euler[0].abs().mean())
+        # print("source L foot euler y : ", L_foot_euler[1].abs().mean())
+        # print("source L foot euler z : ", L_foot_euler[2].abs().mean())
+        # print("source R foot euler x : ", R_foot_euler[0].abs().mean())
+        # print("source R foot euler y : ", R_foot_euler[1].abs().mean())
+        # print("source R foot euler z : ", R_foot_euler[2].abs().mean())
         
         # return target_reference.detach()
         return retarget_reference.detach(), target_reference.detach()

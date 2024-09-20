@@ -294,9 +294,9 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
 
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/urdf/tocabi.urdf' 
 
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
+        # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
         # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_random.xml'
-        # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
+        file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
 
         asset_is_mjcf = True
         name = "tocabi"
@@ -372,8 +372,8 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         # tracking_sigma = 0.5
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = 0.0
-            tracking_lin_vel = 1.5 
-            tracking_ang_vel = 0.75 #0.5 
+            tracking_lin_vel = 1.5
+            tracking_ang_vel = .75 #0.5 
             lin_vel_z = 0.0
             ang_vel_xy = 0.0
             orientation = 0.0
@@ -388,6 +388,7 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
             stand_still = 0.0
             dof_pos_limits = 0.0
             feet_contact_forces = 0.1
+            minimize_energy = 1.e-3
 
     class normalization:
         class obs_scales:
@@ -485,9 +486,9 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         amp_replay_buffer_size = 100000
         num_learning_epochs = 5
         num_mini_batches = 4
-        disc_coef = 1
+        disc_coef = 1.
         bounds_loss_coef = 10
-        disc_grad_pen = 2.
+        disc_grad_pen = 2. # 5.
         learning_rate = 3.e-5
 
 
@@ -495,17 +496,17 @@ class TOCABIAMPCfgPPO( LeggedRobotCfgPPO ):
         run_name = ''
         experiment_name = 'tocabi_amp' # should be the same as 'env' in env.py and env_config.py 
         # algorithm_class_name = 'AMPPPOSym'
-        algorithm_class_name = 'AMPPPOSym'
+        algorithm_class_name = 'AMPPPO'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
         max_iterations = 5000 # number of policy updates
         num_steps_per_env = 24 #24 # per iteration, 32 in isaacgymenvs
 
-        amp_reward_coef = 2.0
+        amp_reward_coef = 3.0
         amp_motion_files = REFERENCE_DICT
         amp_num_preload_transitions = 2000000
         amp_task_reward_lerp = 0.3
-        amp_discr_hidden_dims = [256, 256]
+        amp_discr_hidden_dims = [512, 512]
 
         min_normalized_std = [0.05, 0.05, 0.05] * 4
         LOG_WANDB = True
@@ -535,4 +536,5 @@ if TOCABIAMPCfgPPO.policy.encoder_dim is not None:
 
 TOCABIAMPCfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
 TOCABIAMPCfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
-TOCABIAMPCfg.rewards.scales.base_height *=  1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
+TOCABIAMPCfg.rewards.scales.feet_contact_forces *= 1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)
+TOCABIAMPCfg.rewards.scales.minimize_energy *= 1. / (TOCABIAMPCfg.sim.dt * TOCABIAMPCfg.control.decimation)

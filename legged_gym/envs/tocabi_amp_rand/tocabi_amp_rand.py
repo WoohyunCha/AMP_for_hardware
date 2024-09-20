@@ -301,18 +301,7 @@ class TOCABIAMPRand(BaseTask):
         
         # reset robot states
         if self.cfg.env.reference_state_initialization:
-            env_per_morph = int(self.num_envs / self.cfg.asset.num_morphologies)
-            # list version
-            # for env_id in env_ids:
-            #     morph_id = int(env_id / env_per_morph)
-            #     # list version
-            #     frame = self.amp_loader[morph_id].get_full_frame()
-            #     self._reset_dofs_amp_single(env_id=env_id, frame=frame)
-            #     self._reset_root_states_amp_single(env_id=env_id, frame=frame)
-            # self._reset_dofs_and_root_states(env_ids)
-
-            # morph version
-            frames = self.amp_loader.get_full_frame_batch(len(env_ids)) # shape (len(env_ids), num_morphology, d)
+            frames = self.amp_loader.get_full_frame_batch(len(env_ids))
             self._reset_dofs_amp(env_ids, frames)
             self._reset_root_states_amp(env_ids, frames)
         else:
@@ -486,9 +475,9 @@ class TOCABIAMPRand(BaseTask):
         base_ang_vel = self.base_ang_vel
         foot_pos = self.foot_positions_in_base_frame()
         # foot_rot = self.foot_rotations_in_base_frame()
-        # ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
+        ret = torch.concat((base_height, self.base_quat ,base_lin_vel, base_ang_vel, self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         # ret = torch.concat((base_height, self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
-        ret = torch.concat((self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
+        # ret = torch.concat((self.base_quat , self.dof_pos[:, :self.num_actions],self.dof_vel[:, :self.num_actions], foot_pos), dim=-1)             
         return ret
 
     def create_sim(self):
@@ -871,14 +860,18 @@ class TOCABIAMPRand(BaseTask):
         env_per_morph = int(self.num_envs / self.cfg.asset.num_morphologies)
         morph_ids = (env_ids / env_per_morph).to(torch.long)
         self._reset_root_states(env_ids=env_ids) 
-        # root_pos = AMPLoaderMorph.get_root_pos_batch(frames)
-        # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
-        # self.root_states[env_ids, 2] = AMPLoaderMorph.get_root_pos_batch(frames).squeeze()
+        root_pos = AMPLoaderMorph.get_root_pos_batch(frames).to(torch.float32)
         root_orn = AMPLoaderMorph.get_root_rot_batch(frames).to(torch.float32)
+        root_linvel = AMPLoaderMorph.get_linear_vel_batch(frames).to(torch.float32)
+        root_angvel = AMPLoaderMorph.get_angular_vel_batch(frames).to(torch.float32)
+        # root_pos[torch.arange(frames.shape[0]), morph_ids, :2] = root_pos[torch.arange(frames.shape[0]), morph_ids, :2] + self.env_origins[env_ids, :2]
+
+        self.root_states[env_ids, 2] = root_pos[torch.arange(frames.shape[0]), morph_ids, :].squeeze()
         self.root_states[env_ids, 3:7] = root_orn[torch.arange(frames.shape[0]), morph_ids, :]
-        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoaderMorph.get_linear_vel_batch(frames))
-        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoaderMorph.get_angular_vel_batch(frames))
-        self.root_states[env_ids, 7:13] = torch_rand_float(-0., 0., (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
+        self.root_states[env_ids, 7:10] = quat_rotate(root_orn[torch.arange(frames.shape[0]), morph_ids, :], root_linvel[torch.arange(frames.shape[0]), morph_ids, :])
+        self.root_states[env_ids, 10:13] = quat_rotate(root_orn[torch.arange(frames.shape[0]), morph_ids, :], root_angvel[torch.arange(frames.shape[0]), morph_ids, :])
+
+        # self.root_states[env_ids, 7:13] = torch_rand_float(-0., 0., (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
         # self.root_states[env_ids, 7] = torch_rand_float(-0.2, 0.2, (len(env_ids),1), device=self.device).squeeze(-1) # [7:10]: lin vel, [10:13]: ang vel
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
@@ -897,12 +890,12 @@ class TOCABIAMPRand(BaseTask):
         self._reset_root_states_single(env_id=env_id) 
         # root_pos = AMPLoaderMorph.get_root_pos_batch(frames)
         # root_pos[:, :2] = root_pos[:, :2] + self.env_origins[env_ids, :2]
-        # self.root_states[env_ids, 2] = AMPLoader.get_root_pos_batch(frames).squeeze()
+        self.root_states[env_id, 2] = AMPLoader.get_root_pos_batch(frame).squeeze()
         root_orn = AMPLoader.get_root_rot(frame)
         self.root_states[env_id, 3:7] = root_orn
-        # self.root_states[env_ids, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frames))
-        # self.root_states[env_ids, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frames))
-        self.root_states[env_id, 7:13] = torch_rand_float(-0., 0., (1,6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
+        self.root_states[env_id, 7:10] = quat_rotate(root_orn, AMPLoader.get_linear_vel_batch(frame))
+        self.root_states[env_id, 10:13] = quat_rotate(root_orn, AMPLoader.get_angular_vel_batch(frame))
+        # self.root_states[env_id, 7:13] = torch_rand_float(-0., 0., (1,6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
         # self.root_states[env_ids, 7] = torch_rand_float(-0.2, 0.2, (len(env_ids),1), device=self.device).squeeze(-1) # [7:10]: lin vel, [10:13]: ang vel
 
 
@@ -1756,6 +1749,21 @@ class TOCABIAMPRand(BaseTask):
 
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
-        return (1-torch.exp(-(torch.norm(torch.clamp(self.contact_forces[:, self.feet_indices[0], 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1) \
-                                                            + torch.norm(torch.clamp(self.contact_forces[:, self.feet_indices[1], 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1)) / self.cfg.rewards.contact_force_sigma))
+        ones = torch.ones((self.num_envs,), device=self.device)
+        zeros = torch.zeros((self.num_envs,), device=self.device)
+        lfoot_force, rfoot_force = self.contact_forces[:, self.feet_indices[0], :], self.contact_forces[:, self.feet_indices[1], :]
+        left_foot_thres = lfoot_force[:,2].unsqueeze(-1) > 1.4*9.81*self.robot_mass
+        right_foot_thres = rfoot_force[:,2].unsqueeze(-1) > 1.4*9.81*self.robot_mass
+        thres = left_foot_thres | right_foot_thres
+        force_thres_penalty = torch.where(thres.squeeze(-1), -2*ones[:], zeros[:])
+        contact_force_penalty_thres = (1-torch.exp(-(torch.norm(torch.clamp(lfoot_force[:, 2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1) \
+                                                            + torch.norm(torch.clamp(rfoot_force[:,2].unsqueeze(-1) - 1.4*9.81*self.robot_mass, min=0.0), dim=1)) / self.cfg.rewards.contact_force_sigma))
+
+        contact_force_penalty = torch.where(thres.squeeze(-1), contact_force_penalty_thres[:], ones)
+
+        return (force_thres_penalty + contact_force_penalty) 
         # return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+    
+    def _reward_minimize_energy(self):
+        # return -torch.sum(torch.clamp(self.torques[:, :self.num_actions]*self.dof_vel[:, :self.num_actions], min=0.), dim=-1)
+        return -torch.sum(self.torques[:, :self.num_actions]*self.dof_vel[:, :self.num_actions], dim=-1)
