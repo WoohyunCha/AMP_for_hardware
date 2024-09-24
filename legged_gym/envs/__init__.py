@@ -37,6 +37,11 @@ from .tocabi_amp.tocabi_amp import TOCABIAMP
 from .tocabi_amp.tocabi_amp_config import TOCABIAMPCfg, TOCABIAMPCfgPPO
 from .tocabi_amp_rand.tocabi_amp_rand import TOCABIAMPRand
 from .tocabi_amp_rand.tocabi_amp_rand_config import TOCABIAMPRandCfg, TOCABIAMPRandCfgPPO
+from .tocabi_amp_rand.tocabi_amp_rand_config_0 import TOCABIAMPRand0Cfg, TOCABIAMPRand0CfgPPO
+from .tocabi_amp_rand.tocabi_amp_rand_config_1 import TOCABIAMPRand1Cfg, TOCABIAMPRand1CfgPPO
+from .tocabi_amp_rand.tocabi_amp_rand_config_2 import TOCABIAMPRand2Cfg, TOCABIAMPRand2CfgPPO
+from .tocabi_amp_rand.tocabi_amp_rand_config_3 import TOCABIAMPRand3Cfg, TOCABIAMPRand3CfgPPO
+from .tocabi_amp_rand.tocabi_amp_rand_config_4 import TOCABIAMPRand4Cfg, TOCABIAMPRand4CfgPPO
 
 
 import os
@@ -47,3 +52,8 @@ task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO() )
 task_registry.register( "a1_amp", LeggedRobot, A1AMPCfg(), A1AMPCfgPPO() )
 task_registry.register( "tocabi_amp", TOCABIAMP, TOCABIAMPCfg(), TOCABIAMPCfgPPO())
 task_registry.register( "tocabi_amp_rand", TOCABIAMPRand, TOCABIAMPRandCfg(), TOCABIAMPRandCfgPPO())
+task_registry.register( "tocabi_amp_rand_0", TOCABIAMPRand, TOCABIAMPRand0Cfg(), TOCABIAMPRand0CfgPPO())
+task_registry.register( "tocabi_amp_rand_1", TOCABIAMPRand, TOCABIAMPRand1Cfg(), TOCABIAMPRand1CfgPPO())
+task_registry.register( "tocabi_amp_rand_2", TOCABIAMPRand, TOCABIAMPRand2Cfg(), TOCABIAMPRand2CfgPPO())
+task_registry.register( "tocabi_amp_rand_3", TOCABIAMPRand, TOCABIAMPRand3Cfg(), TOCABIAMPRand3CfgPPO())
+task_registry.register( "tocabi_amp_rand_4", TOCABIAMPRand, TOCABIAMPRand4Cfg(), TOCABIAMPRand4CfgPPO())

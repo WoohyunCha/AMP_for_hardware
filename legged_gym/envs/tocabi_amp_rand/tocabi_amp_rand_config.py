@@ -298,7 +298,7 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
         # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_random.xml'
         file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
-        num_morphologies = 64 # num_envs must be a multiple of num_morphologies
+        num_morphologies = 32 # num_envs must be a multiple of num_morphologies
 
         asset_is_mjcf = True
         name = "tocabi"
@@ -392,6 +392,8 @@ class TOCABIAMPRandCfg( LeggedRobotCfg ):
             action_rate = 0.0
             stand_still = 0.0
             dof_pos_limits = 0.0
+            feet_contact_forces = 0.1
+            minimize_energy = 1.e-3
 
     class normalization:
         class obs_scales:
@@ -493,6 +495,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         bounds_loss_coef = 10
         disc_grad_pen = 2.
         learning_rate = 3.e-5
+        morphnet_coef = 5.
 
 
     class runner( LeggedRobotCfgPPO.runner ):
@@ -509,11 +512,12 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         amp_motion_files = REFERENCE_DICT
         amp_num_preload_transitions =  2000000
         amp_task_reward_lerp = 0.3
-        amp_discr_hidden_dims = [512, 512]
+        amp_discr_hidden_dims = [256, 256]
 
         min_normalized_std = [0.05, 0.05, 0.05] * 4
         LOG_WANDB = True
         wgan = True
+        morphnet = False
 
 if 'Sym' in TOCABIAMPRandCfgPPO.runner.algorithm_class_name:
     TOCABIAMPRandCfgPPO.algorithm.include_history_steps = TOCABIAMPRandCfg.env.include_history_steps
@@ -535,8 +539,13 @@ if 'Sym' in TOCABIAMPRandCfgPPO.runner.algorithm_class_name:
     TOCABIAMPRandCfgPPO.algorithm.no_mirror = []
 
 if TOCABIAMPRandCfgPPO.policy.encoder_dim is not None:
-    TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+    if TOCABIAMPRandCfgPPO.runner.morphnet:
+        TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticMorphnet'
+    else:
+        TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+
 
 TOCABIAMPRandCfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)
 TOCABIAMPRandCfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)
-TOCABIAMPRandCfg.rewards.scales.base_height *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)
+TOCABIAMPRandCfg.rewards.scales.feet_contact_forces *= 1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)
+TOCABIAMPRandCfg.rewards.scales.minimize_energy *= 1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)

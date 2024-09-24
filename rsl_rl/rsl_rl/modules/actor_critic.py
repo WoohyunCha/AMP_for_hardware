@@ -35,6 +35,7 @@ import torch.nn as nn
 from torch.distributions import Normal
 from torch.nn.modules import rnn
 from rsl_rl.modules.encoder import CNNEncoder
+from rsl_rl.modules.morphnet import Morphnet
 
 
 class ActorCritic(nn.Module):
@@ -189,3 +190,33 @@ class ActorCriticEncoder(ActorCritic):
         latent = self.encoder(long_history)
         value = self.critic(torch.cat((critic_observations, latent), dim=-1))
         return value
+
+class ActorCriticMorphnet(ActorCritic):
+    def __init__(self, num_actor_obs, num_critic_obs, num_actions, actor_hidden_dims=[256, 256, 256], critic_hidden_dims=[256, 256, 256], activation='elu', init_noise_std=1, fixed_std=False, encoder_dim=16, encoder_history_steps=50, input_dim=48, morph_params_dim = 4, **kwargs):
+        super().__init__(num_actor_obs, num_critic_obs, num_actions, actor_hidden_dims, critic_hidden_dims, activation, init_noise_std, fixed_std, **kwargs)
+        self.encoder = Morphnet(input_dim * encoder_history_steps, morph_params_dim)
+
+    def update_distribution(self, observations, long_history):
+        latent = self.encoder(long_history)
+        mean = self.actor(torch.cat((observations, latent.detach()), dim=-1))
+        std = self.std.to(mean.device)
+        self.distribution = Normal(mean, mean*0. + std)
+
+    def act(self, observations, long_history, **kwargs):
+        self.update_distribution(observations, long_history)
+        return self.distribution.sample()
+    
+    def get_actions_log_prob(self, actions):
+        return self.distribution.log_prob(actions).sum(dim=-1)
+
+    def act_inference(self, observations, long_history):
+        latent = self.encoder(long_history)
+        assert latent.requires_grad, f"encoder grad lost in act_inference!"
+        actions_mean = self.actor(torch.cat((observations, latent.detach()), dim=-1))
+        return actions_mean
+
+    def evaluate(self, critic_observations, long_history, **kwargs):
+        latent = self.encoder(long_history)
+        value = self.critic(torch.cat((critic_observations, latent.detach()), dim=-1))
+        return value
+    

@@ -38,7 +38,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 
 from rsl_rl.algorithms import AMPPPO, PPO, AMPPPOSym, AMPPPOSymMorph, AMPPPOMorph
-from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, ActorCriticEncoder
+from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, ActorCriticEncoder, ActorCriticMorphnet
 from rsl_rl.env import VecEnv
 from rsl_rl.algorithms.amp_discriminator import AMPDiscriminator, AMPCritic
 from rsl_rl.datasets.motion_loader import AMPLoader,AMPLoaderMorph
@@ -528,7 +528,18 @@ class AMPOnPolicyRunnerRand:
             self.encoder_history_steps = self.policy_cfg["encoder_history_steps"]
             self.encoder_skips = self.policy_cfg["encoder_skips"]
             self.env.set_encoder(self.encoder_dim, self.encoder_history_steps, self.encoder_skips) 
-            actor_critic: ActorCriticEncoder = actor_critic_class( num_actor_obs=num_actor_obs+self.encoder_dim,
+            if self.cfg["morphnet"]:
+                self.morph_params_dim = len(self.env.morph_params[0])
+                actor_critic: ActorCriticMorphnet = actor_critic_class(
+                    num_actor_obs=num_actor_obs+self.morph_params_dim,
+                    num_critic_obs=num_critic_obs+self.morph_params_dim,
+                    num_actions=self.env.num_actions,
+                    morph_params_dim=self.morph_params_dim,
+                    **self.policy_cfg
+                ).to(self.device)
+            else:
+                self.morph_params_dim = 0
+                actor_critic: ActorCriticEncoder = actor_critic_class( num_actor_obs=num_actor_obs+self.encoder_dim,
                                                             num_critic_obs=num_critic_obs+self.encoder_dim,
                                                             num_actions=self.env.num_actions,
                                                             **self.policy_cfg).to(self.device)
@@ -538,14 +549,14 @@ class AMPOnPolicyRunnerRand:
                                                             num_actions=self.env.num_actions,
                                                             **self.policy_cfg).to(self.device)
 
-        # use list version
-        amp_data = AMPLoader(
-            device, time_between_frames=self.env.dt, preload_transitions=True,
-            num_preload_transitions=train_cfg['runner']['amp_num_preload_transitions'], 
-            reference_dict=self.cfg["amp_motion_files"], play=play
-            )
+        # # use single reference
+        # amp_data = AMPLoader(
+        #     device, time_between_frames=self.env.dt, preload_transitions=True,
+        #     num_preload_transitions=train_cfg['runner']['amp_num_preload_transitions'], 
+        #     reference_dict=self.cfg["amp_motion_files"], play=play
+        #     )
 
-        # list of loaders version
+        # # list of loaders version
         # amp_data = []
         # amp_data.append(AMPLoader(
         #     device, time_between_frames=self.env.dt, preload_transitions=True,
@@ -565,19 +576,24 @@ class AMPOnPolicyRunnerRand:
         #     )
 
  
-        # # AMP_Loader_morph version
-        # amp_data = AMPLoaderMorph(device, time_between_frames=self.env.dt, preload_transitions=True,
-        #     num_preload_transitions=int(train_cfg['runner']['amp_num_preload_transitions']/self.env.cfg.asset.num_morphologies), 
-        #     reference_dict=self.cfg["amp_motion_files"], play=play, num_morphology=self.env.cfg.asset.num_morphologies
-        #     )
-        # for morph in range(self.env.cfg.asset.num_morphologies):
-        #     source_asset_path = self.env.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
-        #     source_asset_root = os.path.dirname(source_asset_path)
-        #     source_asset_file = os.path.basename(source_asset_path)
-        #     target_asset_file = os.path.splitext(source_asset_file)[0] + f'_randomized_{morph}.xml'
-        #     target_asset_path = os.path.join(source_asset_root, target_asset_file)
-        #     amp_data.register_morphology(target_asset_path)
-        # amp_data.post_registering_morphologies()
+        # AMP_Loader_morph version
+        amp_data = AMPLoaderMorph(device, time_between_frames=self.env.dt, preload_transitions=True,
+            num_preload_transitions=int(train_cfg['runner']['amp_num_preload_transitions']/self.env.cfg.asset.num_morphologies), 
+            reference_dict=self.cfg["amp_motion_files"], play=play, num_morphology=self.env.cfg.asset.num_morphologies
+            )
+        for morph in range(self.env.cfg.asset.num_morphologies):
+
+            if self.env.cfg.domain_rand.link_length_randomize_range == 0.:
+                print("Not forming random morphologies")
+                target_asset_path = self.env.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)         
+            else:
+                source_asset_path = self.env.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+                source_asset_root = os.path.dirname(source_asset_path)
+                source_asset_file = os.path.basename(source_asset_path)
+                target_asset_file = os.path.splitext(source_asset_file)[0] + f'_randomized_{morph}.xml'
+                target_asset_path = os.path.join(source_asset_root, target_asset_file)
+            amp_data.register_morphology(target_asset_path, self.env.morph_params[morph])
+        amp_data.post_registering_morphologies()
 
         if isinstance(amp_data, list):
             print("AMP data observation data size : ", amp_data[0].observation_dim)
@@ -602,14 +618,14 @@ class AMPOnPolicyRunnerRand:
             if self.cfg['wgan']:
                 print("WGAN is used!!!")
                 discriminator = AMPCritic(
-                    amp_data.observation_dim * 2,
+                    amp_data.observation_dim * 2 + self.morph_params_dim,
                     train_cfg['runner']['amp_reward_coef'],
                     train_cfg['runner']['amp_discr_hidden_dims'], device,
                     train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
             else:
                 print("LSGAN is used!!!")
                 discriminator = AMPDiscriminator( # Discriminator computes the reward and gradient penalty loss.
-                    amp_data.observation_dim * 2,
+                    amp_data.observation_dim * 2 + self.morph_params_dim,
                     train_cfg['runner']['amp_reward_coef'],
                     train_cfg['runner']['amp_discr_hidden_dims'], device,
                     train_cfg['runner']['amp_task_reward_lerp']).to(self.device)
@@ -619,14 +635,15 @@ class AMPOnPolicyRunnerRand:
             torch.tensor(self.cfg["min_normalized_std"], device=self.device) *
             (torch.abs(self.env.dof_pos_limits[:, 1] - self.env.dof_pos_limits[:, 0]))[:self.env.num_actions])
         if self.encoder_dim is not None: # encoder
-            self.alg: AMPPPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, encoder_dim=self.encoder_dim, encoder_history_steps=self.encoder_history_steps, **self.alg_cfg) # encoder
+            self.alg: AMPPPOMorph = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, encoder_dim=self.encoder_dim, encoder_history_steps=self.encoder_history_steps, morph_params_dim=self.morph_params_dim, **self.alg_cfg) # encoder
         else:
-            self.alg: AMPPPO = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, **self.alg_cfg) # encoder            
+            self.alg: AMPPPOMorph = alg_class(actor_critic, discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, morph_params_dim=self.morph_params_dim, **self.alg_cfg) # encoder            
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
 
         # init storage and model
         if self.encoder_dim is not None: # encoder
+
             self.alg.init_storage(self.env.num_envs, self.num_steps_per_env, [num_actor_obs], [num_critic_obs], [self.env.num_actions], [self.env.num_obs, self.encoder_history_steps])
         else:
             self.alg.init_storage(self.env.num_envs, self.num_steps_per_env, [num_actor_obs], [num_critic_obs], [self.env.num_actions]) # privileged
@@ -699,13 +716,26 @@ class AMPOnPolicyRunnerRand:
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
+
+
+        num_morphology = self.env.cfg.asset.num_morphologies
+        env_per_morph = int(self.env.num_envs / num_morphology)
+        if self.cfg['morphnet']:
+            morph_params_tensor = torch.tensor(self.env.morph_params, dtype=torch.float32, device=self.device)  # Shape: (num_morphology, 4)
+            assert morph_params_tensor.shape == (num_morphology, self.morph_params_dim), f"morph params tensor shape is not as expected"
+        morph_idxs = torch.arange(num_morphology, device=self.device).repeat_interleave(env_per_morph)
+
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
             # Rollout
+
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
                     if self.encoder_dim is not None: # encoder
-                        actions = self.alg.act(obs, critic_obs, amp_obs, long_history = long_history) # encoder
+                        if self.cfg['morphnet']:
+                            actions = self.alg.act(obs, critic_obs, amp_obs, long_history, morph=morph_params_tensor[morph_idxs])
+                        else:
+                            actions = self.alg.act(obs, critic_obs, amp_obs, long_history = long_history) # encoder
                         obs, privileged_obs, rewards, dones, infos, reset_env_ids, terminal_amp_states, long_history = self.env.step(actions) # encoder buf updated
                         long_history = long_history.to(self.device)
 
@@ -721,11 +751,21 @@ class AMPOnPolicyRunnerRand:
                     next_amp_obs_with_term = torch.clone(next_amp_obs)
                     next_amp_obs_with_term[reset_env_ids] = terminal_amp_states
 
-                    rewards, amp_rewards, _ = self.alg.discriminator.predict_amp_reward(
-                        amp_obs, next_amp_obs_with_term, rewards, normalizer=self.alg.amp_normalizer)
-                    amp_obs = torch.clone(next_amp_obs)
-                    self.alg.process_env_step(rewards, dones, infos, next_amp_obs_with_term)
-                    
+
+
+                    # morph params is shape of (self.env.num_envs, 4)
+                    if self.cfg['morphnet']:
+                        next_amp_obs_with_term_morph = torch.cat((next_amp_obs_with_term, morph_params_tensor[morph_idxs]), dim=-1)
+                        rewards, amp_rewards, _ = self.alg.discriminator.predict_amp_reward(
+                            amp_obs, next_amp_obs_with_term_morph, rewards, normalizer=self.alg.amp_normalizer)
+                        amp_obs = torch.clone(next_amp_obs)
+                        self.alg.process_env_step(rewards, dones, infos, next_amp_obs_with_term_morph)
+                    else:
+                        rewards, amp_rewards, _ = self.alg.discriminator.predict_amp_reward(
+                            amp_obs, next_amp_obs_with_term, rewards, normalizer=self.alg.amp_normalizer)                        
+                        amp_obs = torch.clone(next_amp_obs)
+                        self.alg.process_env_step(rewards, dones, infos, next_amp_obs_with_term)
+
                     # if self.log_dir is not None:
                         # Book keeping
                     if 'episode' in infos:
@@ -753,7 +793,7 @@ class AMPOnPolicyRunnerRand:
                 if isinstance(self.alg, AMPPPOSymMorph) or isinstance(self.alg, AMPPPOSym):                
                     mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred, mean_mirror_loss = self.alg.update_latent()                
                 else:
-                    mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred = self.alg.update_latent()                
+                    mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_morphnet_loss, mean_policy_pred, mean_expert_pred = self.alg.update_latent()                         
             else:
                 if isinstance(self.alg, AMPPPOSymMorph) or isinstance(self.alg, AMPPPOSym):
                     mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred, mean_mirror_loss = self.alg.update()
@@ -813,6 +853,7 @@ class AMPOnPolicyRunnerRand:
             self.writer.add_scalar('Loss/mirror', locs['mean_mirror_loss'], locs['it'])
         self.writer.add_scalar('Loss/AMP', locs['mean_amp_loss'], locs['it'])
         self.writer.add_scalar('Loss/AMP_grad', locs['mean_grad_pen_loss'], locs['it'])
+        self.writer.add_scalar('Loss/morphnet', locs['mean_morphnet_loss'], locs['it'])
         self.writer.add_scalar('Loss/learning_rate', self.alg.learning_rate, locs['it'])
         self.writer.add_scalar('Policy/mean_noise_std', mean_std.item(), locs['it'])
         self.writer.add_scalar('Perf/total_fps', fps, locs['it'])
@@ -837,6 +878,7 @@ class AMPOnPolicyRunnerRand:
                           f"""{'Mirror loss:':>{pad}} {locs['mean_mirror_loss']:.4f}\n"""
                           f"""{'AMP loss:':>{pad}} {locs['mean_amp_loss']:.4f}\n"""
                           f"""{'AMP grad pen loss:':>{pad}} {locs['mean_grad_pen_loss']:.4f}\n"""
+                          f"""{'Morphnet loss:':>{pad}} {locs['mean_morphnet_loss']:.4f}\n"""
                           f"""{'AMP mean policy pred:':>{pad}} {locs['mean_policy_pred']:.4f}\n"""
                           f"""{'AMP mean expert pred:':>{pad}} {locs['mean_expert_pred']:.4f}\n"""
                           f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
@@ -866,6 +908,7 @@ class AMPOnPolicyRunnerRand:
                           f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
                           f"""{'AMP loss:':>{pad}} {locs['mean_amp_loss']:.4f}\n"""
                           f"""{'AMP grad pen loss:':>{pad}} {locs['mean_grad_pen_loss']:.4f}\n"""
+                          f"""{'Morphnet loss:':>{pad}} {locs['mean_morphnet_loss']:.4f}\n"""
                           f"""{'AMP mean policy pred:':>{pad}} {locs['mean_policy_pred']:.4f}\n"""
                           f"""{'AMP mean expert pred:':>{pad}} {locs['mean_expert_pred']:.4f}\n"""
                           f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
@@ -959,6 +1002,7 @@ class AMPOnPolicyRunnerRand:
                 wandb_dict['Loss/mirror'] = locs['mean_mirror_loss']
             wandb_dict['Loss/AMP'] = locs['mean_amp_loss']
             wandb_dict['Loss/AMP_grad'] = locs['mean_grad_pen_loss']
+            wandb_dict['Loss/Morphnet'] = locs['mean_morphnet_loss']
             wandb_dict['Loss/learning_rate'] = self.alg.learning_rate
             wandb_dict['perturbation_flag'] = 1. if self.env.start_perturb and self.env.cfg.domain_rand.push_robots else 0
             if locs['ep_infos']:

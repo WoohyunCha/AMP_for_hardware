@@ -1,4 +1,4 @@
 #  Copyright 2021 ETH Zurich, NVIDIA CORPORATION
 #  SPDX-License-Identifier: BSD-3-Clause
 
-from .rollout_storage import RolloutStorage, RolloutStorage_history
+from .rollout_storage import RolloutStorage, RolloutStorage_history, RolloutStorage_history_morph

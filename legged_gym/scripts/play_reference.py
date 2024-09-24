@@ -37,7 +37,7 @@ from legged_gym.utils import get_args, task_registry
 
 import numpy as np
 import torch
-from rsl_rl.datasets.motion_loader import AMPLoader
+from rsl_rl.datasets.motion_loader import AMPLoader, AMPLoaderMorph
 import glob
 
 # REFERENCE_MOTION_FILE =  glob.glob('/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/cmu/07/07_slow_walk_2.json')
@@ -96,7 +96,15 @@ def play(args):
     source_asset_file = os.path.basename(source_asset_path)
     target_asset_file = os.path.splitext(source_asset_file)[0] + f'_randomized_0.xml'    # env.dt = 1/REFERENCE_HZ
     target_asset_path = os.path.join(source_asset_root, target_asset_file)
-    motion_tensor = AMPLoader('cuda:0', env.dt, reference_dict=REFERENCE_DICT, target_model_file=target_asset_path).trajectories[0].to(torch.float32)
+    # motion_tensor = AMPLoaderMorph('cuda:0', env.dt, reference_dict=REFERENCE_DICT, target_model_file=target_asset_path).trajectories[0].to(torch.float32)
+
+    traj_dict = torch.load('/home/cha/isaac_ws/AMP_for_hardware/legged_gym/scripts/trajectory.pt')
+    traj = traj_dict['trajectory'] # shape (T, M, d)
+    morph = traj_dict['morphology']
+
+    motion_tensor = traj[:, 0, :].to(torch.float32)
+
+
     # # load policy
     # train_cfg.runner.resume = True
     # train_cfg.runner.LOG_WANDB = False

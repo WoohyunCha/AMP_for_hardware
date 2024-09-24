@@ -1222,6 +1222,8 @@ class TOCABIAMPRand(BaseTask):
         shin_randomize_scale = 1 + (2*np.random.random() - 1) * self.cfg.domain_rand.link_length_randomize_range
         ankle_randomize_scale = 1 + (2*np.random.random() - 1) * self.cfg.domain_rand.link_length_randomize_range
 
+        morph_params = [hip_randomize_scale - 1, thigh_randomize_scale - 1, shin_randomize_scale - 1, ankle_randomize_scale - 1]
+
         init_height = 0.
 
         tree = ET.parse(source_asset_path)
@@ -1413,7 +1415,7 @@ class TOCABIAMPRand(BaseTask):
             # Print the new position (optional)
             print(f"New position: {current_pos_values}")
         tree.write(target_asset_path, encoding='utf-8', xml_declaration=True)
-        return target_asset_path
+        return target_asset_path, morph_params
 
     def _create_envs(self):
         """ Creates environments:
@@ -1429,6 +1431,7 @@ class TOCABIAMPRand(BaseTask):
         self.base_init_state = torch.zeros((self.num_envs, 13), dtype=torch.float32, device=self.device)
         self.actor_handles = []
         self.envs = []
+        self.morph_params = []
         self._get_env_origins()
         env_lower = gymapi.Vec3(0., 0., 0.)
         env_upper = gymapi.Vec3(0., 0., 0.)
@@ -1443,12 +1446,18 @@ class TOCABIAMPRand(BaseTask):
         env_per_morph = int(self.num_envs / self.cfg.asset.num_morphologies)
         for morph in range(self.cfg.asset.num_morphologies):
 
-            print("Forming new morphology, morph index : ", morph)
-            asset_path = self._create_robot_asset(morph)
+            if self.cfg.domain_rand.link_length_randomize_range == 0.:
+                print("Not forming random morphologies")
+                asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)        
+                morph_params = [0.,0.,0.,0.] 
+            else:
+                print("Forming new morphology, morph index : ", morph)
+                asset_path, morph_params = self._create_robot_asset(morph)
+            self.amp_loader.register_morphology(asset_path, morph_params)
+            self.morph_params.append(morph_params)
             # list version
             # self.amp_loader.append(AMPLoader(reference_dict=self.cfg.env.amp_motion_files, device=self.device, time_between_frames=self.dt, play=self.cfg.env.play, target_model_file=asset_path)) # Retarget tocabi motion to randomly generated model
             # morph version
-            self.amp_loader.register_morphology(asset_path)
             asset_root = os.path.dirname(asset_path)
             asset_file = os.path.basename(asset_path)
 

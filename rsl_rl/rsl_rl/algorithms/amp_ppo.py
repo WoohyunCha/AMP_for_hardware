@@ -33,10 +33,11 @@ import torch.nn as nn
 import torch.optim as optim
 
 from rsl_rl.modules import ActorCritic
-from rsl_rl.storage import RolloutStorage, RolloutStorage_history
+from rsl_rl.storage import RolloutStorage, RolloutStorage_history, RolloutStorage_history_morph
 from rsl_rl.storage.replay_buffer import ReplayBuffer
 from rsl_rl.algorithms.amp_discriminator import AMPCritic
 from rsl_rl.modules.encoder import CNNEncoder
+from rsl_rl.modules.morphnet import Morphnet
 
 import random
 
@@ -1385,8 +1386,65 @@ class AMPPPOSymMorph(AMPPPOSym):
         return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred, mean_mirror_loss
     
 class AMPPPOMorph(AMPPPO):
-    def __init__(self, actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs=1, num_mini_batches=1, clip_param=0.2, gamma=0.998, lam=0.95, value_loss_coef=1, entropy_coef=0, learning_rate=0.001, max_grad_norm=1, use_clipped_value_loss=True, schedule="fixed", desired_kl=0.01, device='cpu', amp_replay_buffer_size=100000, min_std=None, disc_coef=5, bounds_loss_coef=10, encoder_dim=None, encoder_history_steps=50):
-        super().__init__(actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs, num_mini_batches, clip_param, gamma, lam, value_loss_coef, entropy_coef, learning_rate, max_grad_norm, use_clipped_value_loss, schedule, desired_kl, device, amp_replay_buffer_size, min_std, disc_coef, bounds_loss_coef, encoder_dim, encoder_history_steps)
+    def __init__(self, actor_critic, discriminator, amp_data, amp_normalizer, disc_grad_pen, num_learning_epochs=1, num_mini_batches=1, clip_param=0.2, gamma=0.998, lam=0.95, value_loss_coef=1, entropy_coef=0, learning_rate=0.001, max_grad_norm=1, use_clipped_value_loss=True, schedule="fixed", desired_kl=0.01, device='cpu', amp_replay_buffer_size=100000, min_std=None, disc_coef=5, bounds_loss_coef=10, encoder_dim=None, encoder_history_steps=50, morphnet_coef = 0, morph_params_dim = 0):
+        self.device = device
+
+        self.desired_kl = desired_kl
+        self.schedule = schedule
+        self.learning_rate = learning_rate
+        self.min_std = min_std
+
+        # Discriminator components
+        self.discriminator = discriminator
+        self.discriminator.to(self.device)
+        self.amp_transition = RolloutStorage.Transition()
+        self.amp_storage = ReplayBuffer(
+            (discriminator.input_dim-morph_params_dim) // 2, amp_replay_buffer_size, device, (discriminator.input_dim-morph_params_dim) // 2 + morph_params_dim)
+        self.morph_params_dim = morph_params_dim
+        self.amp_data = amp_data # AMPLoader
+        self.amp_normalizer = amp_normalizer
+
+        # PPO components
+        self.actor_critic = actor_critic
+        self.actor_critic.to(self.device)
+        self.storage = None # initialized later
+
+        self.encoder_dim = encoder_dim if encoder_dim is not None else 0 # encoder
+        self.encoder_history_steps = encoder_history_steps
+
+        # Optimizer for policy and discriminator.
+        params = [
+            {'params': self.actor_critic.parameters(), 'name': 'actor_critic'},
+            {'params': self.discriminator.trunk.parameters(),
+             'weight_decay': 10e-4, 'name': 'amp_trunk'},
+            {'params': self.discriminator.amp_linear.parameters(),
+             'weight_decay': 10e-2, 'name': 'amp_head'}]
+
+        self.optimizer = optim.Adam(params, lr=learning_rate)
+
+        if self.encoder_dim: # encoder
+            if isinstance(self.actor_critic.encoder, Morphnet):
+                self.transition = RolloutStorage_history_morph.Transition()
+            else:
+                self.transition = RolloutStorage_history.Transition()
+        else:
+            self.transition = RolloutStorage.Transition()      
+
+
+        # PPO parameters
+        self.clip_param = clip_param
+        self.num_learning_epochs = num_learning_epochs
+        self.num_mini_batches = num_mini_batches
+        self.value_loss_coef = value_loss_coef
+        self.entropy_coef = entropy_coef
+        self.disc_coef = disc_coef
+        self.disc_grad_pen = disc_grad_pen
+        self.bounds_loss_coef = bounds_loss_coef
+        self.gamma = gamma
+        self.lam = lam
+        self.max_grad_norm = max_grad_norm
+        self.use_clipped_value_loss = use_clipped_value_loss
+        self.morphnet_coef = morphnet_coef
 
     def update_latent(self):
         mean_value_loss = 0
@@ -1395,6 +1453,7 @@ class AMPPPOMorph(AMPPPO):
         mean_grad_pen_loss = 0
         mean_policy_pred = 0
         mean_expert_pred = 0
+        mean_morphnet_loss = 0
         if self.actor_critic.is_recurrent:
             raise NotImplementedError
             generator = self.storage.reccurent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
@@ -1420,9 +1479,17 @@ class AMPPPOMorph(AMPPPO):
             self.storage.num_envs * self.storage.num_transitions_per_env //
                 self.num_mini_batches) 
         for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
-
-                obs_batch, history_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+                if isinstance(self.actor_critic.encoder, Morphnet):
+                    obs_batch, history_batch, morph_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
                     old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
+                    morph_batch = morph_batch.detach()
+                    # Morphnet Supervised Learning
+                    print("actual morph : ", morph_batch[0])
+                    print("morphnet : ", self.actor_critic.encoder(history_batch)[0])
+                    morphnet_loss = torch.nn.MSELoss()(self.actor_critic.encoder(history_batch), morph_batch)
+                else:
+                    obs_batch, history_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+                        old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch = sample
                 aug_obs_batch = obs_batch.detach()
                 long_history_batch = history_batch.detach()
                 self.actor_critic.act(aug_obs_batch, long_history_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
@@ -1432,6 +1499,7 @@ class AMPPPOMorph(AMPPPO):
                 mu_batch = self.actor_critic.action_mean
                 sigma_batch = self.actor_critic.action_std
                 entropy_batch = self.actor_critic.entropy
+                encoder_batch = self.actor_critic.encoder(long_history_batch)
 
                 # KL
                 if self.desired_kl != None and self.schedule == 'adaptive':
@@ -1490,10 +1558,16 @@ class AMPPPOMorph(AMPPPO):
                 expert_state, expert_next_state = sample_amp_expert
                 if self.amp_normalizer is not None:
                     with torch.no_grad():
-                        policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
-                        policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
-                        expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
-                        expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)
+                        if self.morph_params_dim > 0:
+                            policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
+                            policy_next_state[:, :-self.morph_params_dim] = self.amp_normalizer.normalize_torch(policy_next_state[:, :-self.morph_params_dim], self.device)
+                            expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                            expert_next_state[:, :-self.morph_params_dim] = self.amp_normalizer.normalize_torch(expert_next_state[:, :-self.morph_params_dim], self.device)
+                        else:
+                            policy_state = self.amp_normalizer.normalize_torch(policy_state, self.device)
+                            policy_next_state = self.amp_normalizer.normalize_torch(policy_next_state, self.device)
+                            expert_state = self.amp_normalizer.normalize_torch(expert_state, self.device)
+                            expert_next_state = self.amp_normalizer.normalize_torch(expert_next_state, self.device)                            
                 policy_d = self.discriminator(torch.cat([policy_state, policy_next_state], dim=-1))
                 expert_d = self.discriminator(torch.cat([expert_state, expert_next_state], dim=-1))
                 if isinstance(self.discriminator, AMPCritic):
@@ -1537,7 +1611,9 @@ class AMPPPOMorph(AMPPPO):
                     self.entropy_coef * entropy_batch.mean() +
                     self.disc_coef*(amp_loss + grad_pen_loss + disc_logit_loss)
                     )
-                
+                if isinstance(self.actor_critic.encoder, Morphnet):
+                    loss += self.morphnet_coef * morphnet_loss
+                    mean_morphnet_loss += morphnet_loss.item()
                 # Gradient step
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -1565,9 +1641,10 @@ class AMPPPOMorph(AMPPPO):
         mean_grad_pen_loss /= num_updates
         mean_policy_pred /= num_updates
         mean_expert_pred /= num_updates
+        mean_morphnet_loss /= num_updates
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred
+        return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_morphnet_loss, mean_policy_pred, mean_expert_pred
 
     def update(self):
         mean_value_loss = 0
@@ -1738,3 +1815,50 @@ class AMPPPOMorph(AMPPPO):
         self.storage.clear()
 
         return mean_value_loss, mean_surrogate_loss, mean_amp_loss, mean_grad_pen_loss, mean_policy_pred, mean_expert_pred
+  
+    def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, history_shape = None):
+        if self.encoder_dim: # encoder
+            if isinstance(self.actor_critic.encoder, Morphnet):
+                assert self.morph_params_dim > 0, f"Morphnet is used but morph params dim is zero"
+                self.storage = RolloutStorage_history_morph(
+                    num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, history_shape, [self.morph_params_dim], self.device
+                )
+            else:
+                self.storage = RolloutStorage_history(
+                num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, history_shape, self.device)
+        else:          
+            self.storage = RolloutStorage(
+            num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape, self.device)
+
+    def act(self, obs, critic_obs, amp_obs, long_history = None, morph = None):
+        if self.actor_critic.is_recurrent:
+            self.transition.hidden_states = self.actor_critic.get_hidden_states()
+        # Compute the actions and values
+        aug_obs, aug_critic_obs = obs.detach(), critic_obs.detach()
+        #encoder
+        if long_history is not None: # received history vector. 
+            # latent_vector= self.encoder(long_history).detach()
+            # assert latent_vector.shape == (aug_obs.shape[0], self.encoder_dim), f"laten vector shape : {latent_vector.shape}"
+            self.transition.actions = self.actor_critic.act(aug_obs, long_history.detach()).detach()
+            self.transition.values = self.actor_critic.evaluate(aug_obs, long_history.detach()).detach()
+            self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
+            self.transition.action_mean = self.actor_critic.action_mean.detach()
+            self.transition.action_sigma = self.actor_critic.action_std.detach()
+            # need to record obs and critic_obs before env.step()
+            self.transition.observations = obs
+            self.transition.critic_observations = critic_obs
+            self.transition.history  = long_history
+            if isinstance(self.actor_critic.encoder, Morphnet):
+                self.transition.morph = morph
+            self.amp_transition.observations = amp_obs
+            return self.transition.actions
+        self.transition.actions = self.actor_critic.act(aug_obs).detach()
+        self.transition.values = self.actor_critic.evaluate(aug_critic_obs).detach()
+        self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
+        self.transition.action_mean = self.actor_critic.action_mean.detach()
+        self.transition.action_sigma = self.actor_critic.action_std.detach()
+        # need to record obs and critic_obs before env.step()
+        self.transition.observations = obs
+        self.transition.critic_observations = critic_obs
+        self.amp_transition.observations = amp_obs
+        return self.transition.actions

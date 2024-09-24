@@ -56,7 +56,7 @@ REFERENCE_DICT = {
     #     'weight' : 1.
     # },
     '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json': {
-        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml',
         'hz' : 2000,
         'start_time' : 4.5,
         'end_time' : 8.1,
