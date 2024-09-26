@@ -331,14 +331,14 @@ class TOCABIAMPCfg( LeggedRobotCfg ):
         torque_constant_range = 0.1
         randomize_joints = False
         damping_range = [0., 2.9]
-        armature_range = [0.6, 1.4]
+        armature_range = [0.8, 1.2]
         dof_friction_range = [0.6, 1.4]
 
         randomize_gains = False
         stiffness_multiplier_range = [0.9, 1.1]
         damping_multiplier_range = [0.9, 1.1]
 
-        randomize_delay = False
+        randomize_delay =False
         delay_range_s = 0.01
         # randomize_delay_interval_s = 10
     

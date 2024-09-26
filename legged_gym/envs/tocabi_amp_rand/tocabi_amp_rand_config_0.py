@@ -56,7 +56,7 @@ REFERENCE_DICT = {
     #     'weight' : 1.
     # },
     '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json': {
-        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml',
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
         'hz' : 2000,
         'start_time' : 4.5,
         'end_time' : 8.1,
@@ -298,7 +298,7 @@ class TOCABIAMPRand0Cfg( LeggedRobotCfg ):
         # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/tocabi/xml/dyros_tocabi.xml' 
         # file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_random.xml'
         file = '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml'
-        num_morphologies = 1 # num_envs must be a multiple of num_morphologies
+        num_morphologies = 32 # num_envs must be a multiple of num_morphologies
 
         asset_is_mjcf = True
         name = "tocabi"
@@ -344,7 +344,7 @@ class TOCABIAMPRand0Cfg( LeggedRobotCfg ):
         delay_range_s = 0.01
         # randomize_delay_interval_s = 10
 
-        link_length_randomize_range = 0.
+        link_length_randomize_range = 0.3
 
     class noise:
         add_noise = False
@@ -393,7 +393,7 @@ class TOCABIAMPRand0Cfg( LeggedRobotCfg ):
             stand_still = 0.0
             dof_pos_limits = 0.0
             feet_contact_forces = 0.1
-            minimize_energy = 1.e-3 # 3.e-4
+            minimize_energy = 1.e-3
 
     class normalization:
         class obs_scales:
@@ -495,6 +495,7 @@ class TOCABIAMPRand0CfgPPO( LeggedRobotCfgPPO ):
         bounds_loss_coef = 10
         disc_grad_pen = 2.
         learning_rate = 3.e-5
+        morphnet_coef = 1.
 
 
     class runner( LeggedRobotCfgPPO.runner ):
@@ -516,6 +517,7 @@ class TOCABIAMPRand0CfgPPO( LeggedRobotCfgPPO ):
         min_normalized_std = [0.05, 0.05, 0.05] * 4
         LOG_WANDB = True
         wgan = True
+        morphnet = True
 
 if 'Sym' in TOCABIAMPRand0CfgPPO.runner.algorithm_class_name:
     TOCABIAMPRand0CfgPPO.algorithm.include_history_steps = TOCABIAMPRand0Cfg.env.include_history_steps
@@ -537,7 +539,14 @@ if 'Sym' in TOCABIAMPRand0CfgPPO.runner.algorithm_class_name:
     TOCABIAMPRand0CfgPPO.algorithm.no_mirror = []
 
 if TOCABIAMPRand0CfgPPO.policy.encoder_dim is not None:
-    TOCABIAMPRand0CfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+    if TOCABIAMPRand0CfgPPO.runner.morphnet:
+        TOCABIAMPRand0CfgPPO.runner.policy_class_name = 'ActorCriticMorphnet'
+        TOCABIAMPRand0CfgPPO.policy.encoder_history_steps = 5
+        TOCABIAMPRand0CfgPPO.policy.encoder_skips = 1
+        
+    else:
+        TOCABIAMPRand0CfgPPO.runner.policy_class_name = 'ActorCriticEncoder'    
+
 
 TOCABIAMPRand0Cfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPRand0Cfg.sim.dt * TOCABIAMPRand0Cfg.control.decimation)
 TOCABIAMPRand0Cfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPRand0Cfg.sim.dt * TOCABIAMPRand0Cfg.control.decimation)

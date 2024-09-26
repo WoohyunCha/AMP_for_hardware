@@ -12,8 +12,8 @@ class Morphnet(nn.Module):
         self.linear1 = nn.Linear(input_dim, hidden_dims[0])
         self.linear2 = nn.Linear(hidden_dims[0], hidden_dims[1])
         self.head = nn.Linear(hidden_dims[1], output_dim)
-        self.activation1 = nn.Tanh()
-        self.activation2 = nn.Tanh()
+        self.activation1 = nn.ReLU()
+        self.activation2 = nn.ReLU()
 
 
 

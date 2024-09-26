@@ -1445,6 +1445,10 @@ class AMPPPOMorph(AMPPPO):
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
         self.morphnet_coef = morphnet_coef
+        if self.morph_params_dim > 0:
+            self.morphnet = True
+        else:
+            self.morphnet = False
 
     def update_latent(self):
         mean_value_loss = 0
@@ -1477,7 +1481,7 @@ class AMPPPOMorph(AMPPPO):
         amp_expert_generator = self.amp_data.feed_forward_generator(
             self.num_learning_epochs * self.num_mini_batches,
             self.storage.num_envs * self.storage.num_transitions_per_env //
-                self.num_mini_batches) 
+                self.num_mini_batches, self.morphnet) 
         for sample, sample_amp_policy, sample_amp_expert in zip(generator, amp_policy_generator, amp_expert_generator):
                 if isinstance(self.actor_critic.encoder, Morphnet):
                     obs_batch, history_batch, morph_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \

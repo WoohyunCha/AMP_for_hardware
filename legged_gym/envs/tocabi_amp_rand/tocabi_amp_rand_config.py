@@ -495,7 +495,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         bounds_loss_coef = 10
         disc_grad_pen = 2.
         learning_rate = 3.e-5
-        morphnet_coef = 5.
+        morphnet_coef = 1.
 
 
     class runner( LeggedRobotCfgPPO.runner ):
@@ -505,7 +505,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = 'AMPPPOMorph'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
-        max_iterations = 20000 # number of policy updates
+        max_iterations = 5000 # number of policy updates
         num_steps_per_env = 24 #24 # per iteration, 32 in isaacgymenvs
 
         amp_reward_coef = 3.0
@@ -517,7 +517,7 @@ class TOCABIAMPRandCfgPPO( LeggedRobotCfgPPO ):
         min_normalized_std = [0.05, 0.05, 0.05] * 4
         LOG_WANDB = True
         wgan = True
-        morphnet = False
+        morphnet = True
 
 if 'Sym' in TOCABIAMPRandCfgPPO.runner.algorithm_class_name:
     TOCABIAMPRandCfgPPO.algorithm.include_history_steps = TOCABIAMPRandCfg.env.include_history_steps
@@ -541,8 +541,11 @@ if 'Sym' in TOCABIAMPRandCfgPPO.runner.algorithm_class_name:
 if TOCABIAMPRandCfgPPO.policy.encoder_dim is not None:
     if TOCABIAMPRandCfgPPO.runner.morphnet:
         TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticMorphnet'
+        TOCABIAMPRandCfgPPO.policy.encoder_history_steps = 5
+        TOCABIAMPRandCfgPPO.policy.encoder_skips = 1
+        
     else:
-        TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+        TOCABIAMPRandCfgPPO.runner.policy_class_name = 'ActorCriticEncoder'    
 
 
 TOCABIAMPRandCfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPRandCfg.sim.dt * TOCABIAMPRandCfg.control.decimation)

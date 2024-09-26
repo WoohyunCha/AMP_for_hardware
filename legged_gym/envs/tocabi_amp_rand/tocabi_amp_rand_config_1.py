@@ -56,7 +56,7 @@ REFERENCE_DICT = {
     #     'weight' : 1.
     # },
     '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json': {
-        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml',
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
         'hz' : 2000,
         'start_time' : 4.5,
         'end_time' : 8.1,
@@ -344,7 +344,7 @@ class TOCABIAMPRand1Cfg( LeggedRobotCfg ):
         delay_range_s = 0.01
         # randomize_delay_interval_s = 10
 
-        link_length_randomize_range = 0.05
+        link_length_randomize_range = 0.3
 
     class noise:
         add_noise = False
@@ -393,7 +393,7 @@ class TOCABIAMPRand1Cfg( LeggedRobotCfg ):
             stand_still = 0.0
             dof_pos_limits = 0.0
             feet_contact_forces = 0.1
-            minimize_energy = 1.e-3 # 3.e-4
+            minimize_energy = 1.e-3
 
     class normalization:
         class obs_scales:
@@ -495,6 +495,7 @@ class TOCABIAMPRand1CfgPPO( LeggedRobotCfgPPO ):
         bounds_loss_coef = 10
         disc_grad_pen = 2.
         learning_rate = 3.e-5
+        morphnet_coef = 1.
 
 
     class runner( LeggedRobotCfgPPO.runner ):
@@ -504,7 +505,7 @@ class TOCABIAMPRand1CfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = 'AMPPPOMorph'
         policy_class_name = 'ActorCritic'
         # policy_class_name = 'ActorCriticEncoder' 
-        max_iterations = 4000 # number of policy updates
+        max_iterations = 1000 # number of policy updates
         num_steps_per_env = 24 #24 # per iteration, 32 in isaacgymenvs
 
         amp_reward_coef = 3.0
@@ -516,6 +517,7 @@ class TOCABIAMPRand1CfgPPO( LeggedRobotCfgPPO ):
         min_normalized_std = [0.05, 0.05, 0.05] * 4
         LOG_WANDB = True
         wgan = True
+        morphnet = True
 
 if 'Sym' in TOCABIAMPRand1CfgPPO.runner.algorithm_class_name:
     TOCABIAMPRand1CfgPPO.algorithm.include_history_steps = TOCABIAMPRand1Cfg.env.include_history_steps
@@ -537,7 +539,14 @@ if 'Sym' in TOCABIAMPRand1CfgPPO.runner.algorithm_class_name:
     TOCABIAMPRand1CfgPPO.algorithm.no_mirror = []
 
 if TOCABIAMPRand1CfgPPO.policy.encoder_dim is not None:
-    TOCABIAMPRand1CfgPPO.runner.policy_class_name = 'ActorCriticEncoder'
+    if TOCABIAMPRand1CfgPPO.runner.morphnet:
+        TOCABIAMPRand1CfgPPO.runner.policy_class_name = 'ActorCriticMorphnet'
+        TOCABIAMPRand1CfgPPO.policy.encoder_history_steps = 5
+        TOCABIAMPRand1CfgPPO.policy.encoder_skips = 1
+        
+    else:
+        TOCABIAMPRand1CfgPPO.runner.policy_class_name = 'ActorCriticEncoder'    
+
 
 TOCABIAMPRand1Cfg.rewards.scales.tracking_lin_vel *=  1. / (TOCABIAMPRand1Cfg.sim.dt * TOCABIAMPRand1Cfg.control.decimation)
 TOCABIAMPRand1Cfg.rewards.scales.tracking_ang_vel *=  1. / (TOCABIAMPRand1Cfg.sim.dt * TOCABIAMPRand1Cfg.control.decimation)

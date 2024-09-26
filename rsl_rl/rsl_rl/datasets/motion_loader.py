@@ -130,7 +130,7 @@ class AMPLoader:
                     print("Source file : ", info['xml'])
                     motion_retarget = self.MotionRetarget(source_model_path=model_file, target_model_path=target_model_file, device=self.device) # model_file is the source
                     processed_data_full, _ = motion_retarget.retarget(motion_data, i, play, iterations)
-                    processed_data_full = processed_data_full.to(torch.float32)
+                    processed_data_full = processed_data_full.to(torch.float16)
                     processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
 
                 self.trajectories.append( # Only joint space
@@ -172,7 +172,7 @@ class AMPLoader:
             self.preloaded_s_next = self.get_full_frame_at_time_batch(traj_idxs, times + self.time_between_frames)
             print(f'Finished preloading')
 
-
+        torch.save({'trajectory': self.trajectories[0]}, '/home/cha/isaac_ws/AMP_for_hardware/legged_gym/scripts/trajectory.pt')
         self.all_trajectories_full = torch.vstack(self.trajectories_full)
 
     def weighted_traj_idx_sample(self):
@@ -220,14 +220,14 @@ class AMPLoader:
         p = times / self.trajectory_lens[traj_idxs]
         n = self.trajectory_num_frames[traj_idxs]
         idx_low, idx_high = np.floor(p * n).astype(np.int), np.ceil(p * n).astype(np.int)
-        all_frame_starts = torch.zeros(len(traj_idxs), self.observation_dim, dtype=torch.float32, device=self.device)
-        all_frame_ends = torch.zeros(len(traj_idxs), self.observation_dim, dtype=torch.float32, device=self.device)
+        all_frame_starts = torch.zeros(len(traj_idxs), self.observation_dim, dtype=torch.float16, device=self.device)
+        all_frame_ends = torch.zeros(len(traj_idxs), self.observation_dim, dtype=torch.float16, device=self.device)
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories[traj_idx]
             traj_mask = traj_idxs == traj_idx
             all_frame_starts[traj_mask] = trajectory[idx_low[traj_mask]]
             all_frame_ends[traj_mask] = trajectory[idx_high[traj_mask]]
-        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32, requires_grad=False).unsqueeze(-1)
+        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float16, requires_grad=False).unsqueeze(-1)
         return self.slerp(all_frame_starts, all_frame_ends, blend)
 
     def get_full_frame_at_time(self, traj_idx, time):
@@ -244,18 +244,18 @@ class AMPLoader:
         p = times / self.trajectory_lens[traj_idxs]
         n = self.trajectory_num_frames[traj_idxs]
         idx_low, idx_high = np.floor(p * n).astype(np.int), np.ceil(p * n).astype(np.int)
-        all_frame_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_rot_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_rot_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_linvel_starts = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_linvel_ends = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_angvel_starts = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_angvel_ends = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, dtype=torch.float32, device=self.device)
-        all_frame_amp_starts = torch.zeros(len(traj_idxs), AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, dtype=torch.float32, device=self.device)
-        all_frame_amp_ends = torch.zeros(len(traj_idxs),  AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, dtype=torch.float32, device=self.device)
-        all_frame_foot_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, dtype=torch.float32, device=self.device)
-        all_frame_foot_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, dtype=torch.float32, device=self.device)
+        all_frame_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_POS_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_rot_starts = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_rot_ends = torch.zeros(len(traj_idxs), AMPLoader.ROOT_ROT_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_linvel_starts = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_linvel_ends = torch.zeros(len(traj_idxs), AMPLoader.LINEAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_angvel_starts = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_angvel_ends = torch.zeros(len(traj_idxs), AMPLoader.ANGULAR_VEL_SIZE, dtype=torch.float16, device=self.device)
+        all_frame_amp_starts = torch.zeros(len(traj_idxs), AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, dtype=torch.float16, device=self.device)
+        all_frame_amp_ends = torch.zeros(len(traj_idxs),  AMPLoader.JOINT_VEL_END_IDX - AMPLoader.JOINT_POSE_START_IDX, dtype=torch.float16, device=self.device)
+        all_frame_foot_pos_starts = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, dtype=torch.float16, device=self.device)
+        all_frame_foot_pos_ends = torch.zeros(len(traj_idxs), AMPLoader.FOOT_POS_END_IDX - AMPLoader.FOOT_POS_START_IDX, dtype=torch.float16, device=self.device)
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories_full[traj_idx]
             traj_mask = traj_idxs == traj_idx
@@ -272,7 +272,7 @@ class AMPLoader:
             all_frame_foot_pos_starts[traj_mask] = AMPLoader.get_foot_pos_batch(trajectory[idx_low[traj_mask]])
             all_frame_foot_pos_ends[traj_mask] = AMPLoader.get_foot_pos_batch(trajectory[idx_high[traj_mask]])
 
-        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32, requires_grad=False).unsqueeze(-1)
+        blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float16, requires_grad=False).unsqueeze(-1)
 
         pos_blend = self.slerp(all_frame_pos_starts, all_frame_pos_ends, blend) 
         rot_blend = self.slerp(all_frame_rot_starts, all_frame_rot_ends, blend)
@@ -451,20 +451,20 @@ class AMPLoader:
         assert end == 1+3+3+6+AMPLoader.MODEL_DOF+AMPLoader.MODEL_DOF+3+3+3+3, f"process data, shape mismatch {end}"
 
         # torch versions of data
-        pelv_pos_torch = to_torch(pelv_pos, dtype=torch.float32)
-        pelv_vel_torch = to_torch(pelv_vel, dtype=torch.float32)
-        q_pos_torch = to_torch(q_pos, dtype=torch.float32)
-        q_vel_torch = to_torch(q_vel, dtype=torch.float32)
-        L_foot_pos_torch = to_torch(L_foot_pos, dtype=torch.float32)
-        L_foot_rpy_torch = to_torch(L_foot_rpy, dtype=torch.float32)
-        R_foot_pos_torch = to_torch(R_foot_pos, dtype=torch.float32)
-        R_foot_rpy_torch = to_torch(R_foot_rpy, dtype=torch.float32)
+        pelv_pos_torch = to_torch(pelv_pos, dtype=torch.float16)
+        pelv_vel_torch = to_torch(pelv_vel, dtype=torch.float16)
+        q_pos_torch = to_torch(q_pos, dtype=torch.float16)
+        q_vel_torch = to_torch(q_vel, dtype=torch.float16)
+        L_foot_pos_torch = to_torch(L_foot_pos, dtype=torch.float16)
+        L_foot_rpy_torch = to_torch(L_foot_rpy, dtype=torch.float16)
+        R_foot_pos_torch = to_torch(R_foot_pos, dtype=torch.float16)
+        R_foot_rpy_torch = to_torch(R_foot_rpy, dtype=torch.float16)
 
         # Process raw data
         pelvis_yaw =pelv_rpy[:, 2]
         pelvis_pitch = pelv_rpy[:, 1]
         pelvis_roll = pelv_rpy[:, 0]
-        pelvis_quat = quat_from_euler_xyz(to_torch(pelvis_roll, dtype=torch.float32), to_torch(pelvis_pitch, dtype=torch.float32), to_torch(pelvis_yaw, dtype=torch.float32)) # tensor
+        pelvis_quat = quat_from_euler_xyz(to_torch(pelvis_roll, dtype=torch.float16), to_torch(pelvis_pitch, dtype=torch.float16), to_torch(pelvis_yaw, dtype=torch.float16)) # tensor
         base_pos_global_torch = pelv_pos_torch
 
         # Create AMP observation
@@ -763,9 +763,9 @@ class AMPLoader:
             n_iterations = iterations
             if play:
                 n_iterations = 0
-            # q_opt = torch.zeros((reference_length, 12), dtype=torch.float32, requires_grad=True, device='cuda:0')
+            # q_opt = torch.zeros((reference_length, 12), dtype=torch.float16, requires_grad=True, device='cuda:0')
             # q_opt = reference[:, AMPLoader.JOINT_POSE_START_IDX:AMPLoader.JOINT_POSE_END_IDX].clone().detach()
-            TOCABI_INIT_POS_TORCH = torch.tensor([0.0, 0.0, -0.28, 0.6, -0.32, 0.0, 0.0, 0.0, -0.28, 0.6, -0.32, 0.], dtype=torch.float32, device=self.device)
+            TOCABI_INIT_POS_TORCH = torch.tensor([0.0, 0.0, -0.28, 0.6, -0.32, 0.0, 0.0, 0.0, -0.28, 0.6, -0.32, 0.], dtype=torch.float16, device=self.device)
             q_opt = (TOCABI_INIT_POS_TORCH.tile((reference_length, 1))).clone().detach()
             q_opt += 0.01*torch.rand_like(q_opt)
             q_opt = q_opt.requires_grad_(True)
@@ -803,7 +803,7 @@ class AMPLoader:
             L_foot_pos_opt = retarget_local_joint_pos[FOOT_NAME[0]]
             R_foot_pos_opt = retarget_local_joint_pos[FOOT_NAME[1]]
             assert q_vel_opt.shape[0] == L_foot_pos_opt.shape[0]
-            # time = torch.tensor([i for i in range(q_vel_opt.shape[0])], dtype=torch.float32, device='cuda:0').view(-1,1)
+            # time = torch.tensor([i for i in range(q_vel_opt.shape[0])], dtype=torch.float16, device='cuda:0').view(-1,1)
             # retarget_reference = torch.cat((retarget_global_joint_quat['virtual_joint'], q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
             retarget_reference = torch.cat((self.root_ratio*reference[:, 0:1],retarget_global_joint_quat['virtual_joint'], self.root_ratio*source_local_base_lin_vel, source_local_base_ang_vel, q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
 
@@ -1049,7 +1049,7 @@ class AMPLoaderMorph:
                     print("RETARGET REFERENCE MOTIONS")
                     print("Target file : ", target_model_file)
                     print("Source file : ", info['xml'])
-                    motion_retarget = self.MotionRetarget(source_model_path=model_file, target_model_path=target_model_file, device=self.device) # model_file is the source
+                    motion_retarget = self.MotionRetarget(source_model_path=model_file, target_model_path=target_model_file, morph_params=morph_params, device=self.device) # model_file is the source
                     processed_data_full, _ = motion_retarget.retarget(motion_data, i, self.play, self.iterations)
                     processed_data_full = processed_data_full.to(torch.float16)
                     processed_data_joints = processed_data_full[:, self.JOINT_POSE_START_IDX:self.JOINT_VEL_END_IDX]
@@ -1445,7 +1445,7 @@ class AMPLoaderMorph:
             'R_AnkleRoll_Joint': 18,
         }
 
-        def __init__(self, source_model_path: str, target_model_path: str, device):
+        def __init__(self, source_model_path: str, target_model_path: str, morph_params, device):
             source = source_model_path
             target = target_model_path
             source_bodies, source_joints, source_edges = self.process_model(source)
@@ -1469,7 +1469,7 @@ class AMPLoaderMorph:
             # print("TARGET MODEL")
             # self.print_model(self.target)
             self.device = device
-            
+            self.morph_params = morph_params
 
         def process_model(self, model_path: str):
             tree = etree.parse(model_path)
@@ -1733,8 +1733,10 @@ class AMPLoaderMorph:
             assert q_vel_opt.shape[0] == L_foot_pos_opt.shape[0]
             # time = torch.tensor([i for i in range(q_vel_opt.shape[0])], dtype=torch.float32, device='cuda:0').view(-1,1)
             # retarget_reference = torch.cat((retarget_global_joint_quat['virtual_joint'], q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
-            retarget_reference = torch.cat((self.root_ratio*reference[:, 0:1],retarget_global_joint_quat['virtual_joint'], self.root_ratio*source_local_base_lin_vel, source_local_base_ang_vel, q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)
-
+            retarget_base_height, _ = torch.min(torch.cat((L_foot_pos_opt[:, 2:3], R_foot_pos_opt[:, 2:3]), dim=-1),dim=-1, keepdim=True)
+            ankle_morph = 1 + self.morph_params[-1]
+            retarget_base_height += ankle_morph * -0.155 + ankle_morph * -0.0035
+            retarget_reference = torch.cat((-retarget_base_height ,retarget_global_joint_quat['virtual_joint'], self.root_ratio*source_local_base_lin_vel, source_local_base_ang_vel, q_opt, q_vel_opt, L_foot_pos_opt, R_foot_pos_opt), dim=-1)            
             target_reference = torch.zeros((q_opt.shape[0], 3*13), requires_grad=False, device=self.device, dtype=dtype)
             for joint_name, _ in self.JOINT_MAPPING.items():
                 target_reference[:, 3*(self.JOINT_MAPPING[joint_name]-6):3*(self.JOINT_MAPPING[joint_name]-5)] = retarget_global_joint_pos[joint_name]#target_global_joint_pos[joint_name] # retarget_global_joint_pos[joint_name]

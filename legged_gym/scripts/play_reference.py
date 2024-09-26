@@ -51,7 +51,7 @@ import glob
 # REFERENCE_MODEL_FILE = '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/data/raw/CMU_open/69/xml/69.xml'
 REFERENCE_DICT = {
     '/home/cha/isaac_ws/AMP_for_hardware/rsl_rl/rsl_rl/datasets/mocap_motions/motions_json/tocabi/tocabi_data_scaled_1_0x.json': {
-        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi.xml',
+        'xml': '/home/cha/isaac_ws/AMP_for_hardware/resources/robots/tocabi/xml/dyros_tocabi_nomesh.xml',
         'hz' : 2000,
         'start_time' : 4.5,
         'end_time' : 8.1,
@@ -100,9 +100,9 @@ def play(args):
 
     traj_dict = torch.load('/home/cha/isaac_ws/AMP_for_hardware/legged_gym/scripts/trajectory.pt')
     traj = traj_dict['trajectory'] # shape (T, M, d)
-    morph = traj_dict['morphology']
+    # morph = traj_dict['morphology']
 
-    motion_tensor = traj[:, 0, :].to(torch.float32)
+    motion_tensor = traj[:, :].to(torch.float32)
 
 
     # # load policy
