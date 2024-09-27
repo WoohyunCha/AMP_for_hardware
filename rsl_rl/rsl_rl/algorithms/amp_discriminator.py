@@ -132,8 +132,11 @@ class AMPDiscriminator(nn.Module):
             self.eval()
             if normalizer is not None:
                 state = normalizer.normalize_torch(state, self.device)
-                next_state[:, :state.shape[1]] = normalizer.normalize_torch(next_state[:, :state.shape[1]], self.device)
-
+                if state.shape == next_state.shape:
+                    next_state = normalizer.normalize_torch(next_state, self.device)
+                else:
+                    next_state[:, :state.shape[-1]] = normalizer.normalize_torch(next_state[:, :state.shape[-1]], self.device)
+                    
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
             reward = self.amp_reward_coef * torch.clamp(1 - (1/4) * torch.square(d - 1), min=0)
             # print(f"amp reward : {reward}")
@@ -161,7 +164,12 @@ class AMPCritic(AMPDiscriminator):
             self.eval()
             if normalizer is not None:
                 state = normalizer.normalize_torch(state, self.device)
-                next_state[:, :state.shape[1]] = normalizer.normalize_torch(next_state[:, :state.shape[1]], self.device)
+                if state.shape == next_state.shape:
+                    next_state = normalizer.normalize_torch(next_state, self.device)
+                else:
+                    next_state[:, :state.shape[-1]] = normalizer.normalize_torch(next_state[:, :state.shape[-1]], self.device)
+                # next_state = normalizer.normalize_torch(next_state, self.device)
+
 
             d = self.amp_linear(self.trunk(torch.cat([state, next_state], dim=-1)))
             reward = self.amp_reward_coef * .5 * torch.exp(d)

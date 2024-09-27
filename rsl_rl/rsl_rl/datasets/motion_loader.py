@@ -434,7 +434,7 @@ class AMPLoader:
         pelv_vel = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 7:13]
         q_pos = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, 13:13+AMPLoader.JOINT_POS_SIZE]
         start = 13+AMPLoader.MODEL_DOF
-        end = start + self.JOINT_VEL_SIZE
+        end = start + AMPLoader.JOINT_VEL_SIZE
         q_vel = traj[AMPLoader.REFERENCE_START_INDEX:AMPLoader.REFERENCE_END_INDEX, start:end]
         start += AMPLoader.MODEL_DOF
         end = start + 3
